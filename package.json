@@ -1,0 +1,19 @@
+{
+  "name": "learntrack",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:web": "npm run dev -w @learntrack/web",
+    "dev:api": "npm run dev -w @learntrack/api",
+    "test": "npm run test --workspaces --if-present",
+    "start:api": "npm run start -w @learntrack/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

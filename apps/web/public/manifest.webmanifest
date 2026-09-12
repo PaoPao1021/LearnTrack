@@ -1,0 +1,11 @@
+{
+  "name": "LearnTrack 学习时间账本",
+  "short_name": "LearnTrack",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#3b82f6",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

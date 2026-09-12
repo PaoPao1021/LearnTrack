@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# build output
+apps/web/dist
+apps/api/dist
+packages/*/dist
+*.tsbuildinfo
+
+# local runtime data — never commit databases, backups, uploads or secrets
+var/
+!var/.gitkeep
+
+# environment / secrets
+.env
+.env.local
+*.pem
+
+# misc
+.DS_Store
+*.log
+/tmp
