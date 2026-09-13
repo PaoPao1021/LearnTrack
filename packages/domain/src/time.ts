@@ -17,10 +17,26 @@ export function effectiveSecondsBetween(
 ): number {
   if (endAtMs <= startAtMs) return 0;
   let total = (endAtMs - startAtMs) / 1000;
-  for (const p of pauseIntervals) {
-    const s = Math.max(p.startAt, startAtMs);
-    const e = Math.min(p.endAt, endAtMs);
-    if (e > s) total -= (e - s) / 1000;
+  const pauses = pauseIntervals
+    .map((p) => ({ startAt: Math.max(p.startAt, startAtMs), endAt: Math.min(p.endAt, endAtMs) }))
+    .filter((p) => p.endAt > p.startAt)
+    .sort((a, b) => a.startAt - b.startAt);
+  let pauseStart: number | null = null;
+  let pauseEnd: number | null = null;
+  for (const p of pauses) {
+    if (pauseStart == null || pauseEnd == null) {
+      pauseStart = p.startAt;
+      pauseEnd = p.endAt;
+    } else if (p.startAt <= pauseEnd) {
+      pauseEnd = Math.max(pauseEnd, p.endAt);
+    } else {
+      total -= (pauseEnd - pauseStart) / 1000;
+      pauseStart = p.startAt;
+      pauseEnd = p.endAt;
+    }
+  }
+  if (pauseStart != null && pauseEnd != null) {
+    total -= (pauseEnd - pauseStart) / 1000;
   }
   return Math.max(0, Math.round(total));
 }

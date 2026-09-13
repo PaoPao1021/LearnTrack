@@ -90,6 +90,7 @@ export interface ProgressEvent {
   entryId: string | null;
   undoneAt: string | null;
   createdAt: string;
+  version: number;
 }
 
 export interface Todo {
@@ -129,6 +130,7 @@ export interface QuickAction {
   pinned: boolean;
   sortOrder: number;
   hidden: boolean;
+  version: number;
 }
 
 export interface AppSettings {

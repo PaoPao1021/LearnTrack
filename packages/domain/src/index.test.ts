@@ -10,6 +10,8 @@ import {
   chapterProgress,
   quantityProgress,
   overlaps,
+  entrySecondsByLocalDay,
+  stableSeedId,
 } from './index.js';
 import type { Category, EntryRecord } from './index.js';
 
@@ -49,6 +51,15 @@ describe('time calculations', () => {
       [{ startAt: ts('2026-09-10T09:00'), endAt: ts('2026-09-10T09:30') }],
     );
     expect(buckets['2026-09-10']).toBe(1800);
+  });
+
+  it('does not subtract overlapping pause intervals twice', () => {
+    const start = ts('2026-09-10T09:00');
+    const end = ts('2026-09-10T10:00');
+    expect(effectiveSecondsBetween(start, end, [
+      { startAt: ts('2026-09-10T09:10'), endAt: ts('2026-09-10T09:30') },
+      { startAt: ts('2026-09-10T09:20'), endAt: ts('2026-09-10T09:40') },
+    ])).toBe(1800);
   });
 
   it('formats local date keys and weeks', () => {
@@ -96,6 +107,38 @@ describe('stats', () => {
     expect(s.byHour[0]?.seconds).toBe(3600);
   });
 
+  it('allocates a cross-midnight entry to the selected local days', () => {
+    const ranged = entry({
+      method: 'range',
+      learningDate: '2026-09-10',
+      startedAt: ts('2026-09-10T23:30'),
+      endedAt: ts('2026-09-11T00:30'),
+      durationSeconds: 3600,
+    });
+    expect(entrySecondsByLocalDay(ranged)).toEqual({
+      '2026-09-10': 1800,
+      '2026-09-11': 1800,
+    });
+    const nextDay = computeStats([ranged], cats, '2026-09-11', '2026-09-11', { timeZone: TZ });
+    expect(nextDay.totalSeconds).toBe(1800);
+    expect(nextDay.byDay).toEqual([{ date: '2026-09-11', seconds: 1800 }]);
+    expect(nextDay.categories[0]?.totalSeconds).toBe(1800);
+  });
+
+  it('uses wall-clock hour boundaries in half-hour time zones', () => {
+    const indiaEntry = entry({
+      method: 'range',
+      learningDate: '2026-09-10',
+      timeZone: 'Asia/Kolkata',
+      startedAt: new Date('2026-09-10T10:15:00+05:30').getTime(),
+      endedAt: new Date('2026-09-10T11:15:00+05:30').getTime(),
+      durationSeconds: 3600,
+    });
+    const s = computeStats([indiaEntry], cats, '2026-09-10', '2026-09-10', { timeZone: 'Asia/Kolkata' });
+    expect(s.byHour[10]?.seconds).toBe(2700);
+    expect(s.byHour[11]?.seconds).toBe(900);
+  });
+
   it('does not fake hour buckets for duration-only entries', () => {
     const s = computeStats([entry({ durationSeconds: 600 })], cats, '2026-09-07', '2026-09-13', { timeZone: TZ });
     expect(s.byHour.every((h) => h.seconds === 0)).toBe(true);
@@ -131,4 +174,11 @@ it('detects overlapping ranges', () => {
   const c = { startedAt: ts('2026-09-10T10:00'), endedAt: ts('2026-09-10T11:00') };
   expect(overlaps(a, b)).toBe(true);
   expect(overlaps(a, c)).toBe(false);
+});
+
+it('derives the same valid built-in category id on every device', () => {
+  const first = stableSeedId('math.calculus.习题');
+  const second = stableSeedId('math.calculus.习题');
+  expect(first).toBe(second);
+  expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });

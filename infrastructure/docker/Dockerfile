@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY apps ./apps
+COPY database ./database
 RUN npm ci --no-audit --no-fund \
   && npm run build -w @learntrack/domain -w @learntrack/contracts -w @learntrack/web -w @learntrack/api
 

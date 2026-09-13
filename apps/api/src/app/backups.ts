@@ -24,12 +24,10 @@ export async function makeBackup(db: InstanceType<typeof DatabaseSync>, config: 
   db.exec(`VACUUM INTO '${snapshotPath.replace(/'/g, "''")}'`);
   const snapshot = new DatabaseSync(snapshotPath, { readOnly: true });
   try {
-    const tables = ['sync_ops', 'entity_versions'];
     const data: Record<string, unknown[]> = {
       entityVersions: snapshot.prepare('SELECT * FROM entity_versions').all() as unknown[],
       ops: snapshot.prepare('SELECT * FROM sync_ops').all() as unknown[],
     };
-    void tables;
     const json = JSON.stringify(data);
     const checksum = crypto.createHash('sha256').update(json).digest('hex');
     const counts = { entityVersions: (data.entityVersions as unknown[]).length, ops: (data.ops as unknown[]).length };
@@ -48,6 +46,7 @@ export async function makeBackup(db: InstanceType<typeof DatabaseSync>, config: 
       const output = fs.createWriteStream(zipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
       output.on('close', () => resolve());
+      output.on('error', reject);
       archive.on('error', reject);
       archive.pipe(output);
       archive.append(JSON.stringify(manifest, null, 2), { name: 'manifest.json' });

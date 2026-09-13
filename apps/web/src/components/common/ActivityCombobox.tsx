@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { useActivities, labelOf, type ActivityOption } from './useActivities';
 
@@ -8,6 +8,8 @@ export interface ActivityComboboxProps {
   placeholder?: string;
   /** accessible name */
   ariaLabel?: string;
+  /** set when a visible <label htmlFor> should name the input */
+  inputId?: string;
   className?: string;
 }
 
@@ -15,8 +17,9 @@ export interface ActivityComboboxProps {
  * 搜索式活动选择器：输入即过滤（大科目 / 具体科目 / 活动名任意片段匹配），
  * 方向键 + 回车选择，Esc 关闭，类似浏览器搜索框的联想列表。
  */
-export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, className }: ActivityComboboxProps) {
+export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inputId, className }: ActivityComboboxProps) {
   const activities = useActivities();
+  const listId = useId();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -62,11 +65,13 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, clas
         <Search size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 opacity-40" />
         <input
           ref={inputRef}
+          id={inputId}
           role="combobox"
           aria-expanded={open}
-          aria-controls="activity-combobox-list"
+          aria-controls={listId}
           aria-label={ariaLabel}
           aria-autocomplete="list"
+          aria-activedescendant={open && matches.length > 0 ? `${listId}-opt-${active}` : undefined}
           className="input pl-9 pr-8"
           placeholder={selected ? `${labelOf(selected)} · ${selected.activity.name}` : (placeholder ?? '搜索学习活动…')}
           value={query}
@@ -76,7 +81,11 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, clas
             if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, matches.length - 1)); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
             else if (e.key === 'Enter') { e.preventDefault(); const m = matches[active]; if (m) pick(m); }
-            else if (e.key === 'Escape') { setOpen(false); }
+            else if (e.key === 'Escape') {
+              // 先只收起联想列表；列表已收起时才让事件冒泡去关闭外层对话框
+              if (open) e.stopPropagation();
+              setOpen(false);
+            }
           }}
         />
         {(selected || query) && (
@@ -93,18 +102,25 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, clas
 
       {open && matches.length > 0 && (
         <ul
-          id="activity-combobox-list"
+          id={listId}
           ref={listRef}
           role="listbox"
-          className="card absolute z-30 mt-1.5 max-h-64 w-full overflow-y-auto p-1.5"
+          className="glass-emphasis pop-in absolute z-30 mt-1.5 max-h-64 w-full overflow-y-auto rounded-2xl p-1.5"
         >
           {matches.map((o, i) => {
             const label = `${o.major.name} / ${o.subject.name} / ${o.activity.name}`;
             return (
-              <li key={o.activity.id} role="option" aria-selected={value === o.activity.id} data-active={i === active}>
+              <li
+                key={o.activity.id}
+                id={`${listId}-opt-${i}`}
+                role="option"
+                aria-selected={value === o.activity.id}
+                data-active={i === active}
+              >
                 <button
                   type="button"
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${i === active ? 'bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]' : 'hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]'}`}
+                  className="menu-item flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm"
+                  data-active={i === active}
                   onMouseEnter={() => setActive(i)}
                   onMouseDown={(e) => { e.preventDefault(); pick(o); }}
                 >
@@ -120,7 +136,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, clas
         </ul>
       )}
       {open && query.trim() && matches.length === 0 && (
-        <div className="card absolute z-30 mt-1.5 w-full p-4 text-sm opacity-60">
+        <div className="glass-emphasis pop-in absolute z-30 mt-1.5 w-full rounded-2xl p-4 text-sm opacity-80">
           没有匹配“{query}”的活动，可到设置页添加分类。
         </div>
       )}

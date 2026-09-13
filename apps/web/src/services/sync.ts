@@ -1,4 +1,6 @@
 import { db, SETTINGS_KEYS, getSetting, setSetting } from '../db/database';
+import { deletePendingOpsByOpId } from './queue';
+import { SyncPullResponse, SyncPushResponse } from '@learntrack/contracts';
 
 export interface SyncState {
   loggedIn: boolean;
@@ -14,13 +16,22 @@ export async function getServerUrl(): Promise<string> {
 }
 
 export async function setServerUrl(url: string): Promise<void> {
-  await setSetting(SETTINGS_KEYS.serverUrl, url.replace(/\/$/, ''));
+  const normalized = url.trim().replace(/\/+$/, '');
+  const previous = await getServerUrl();
+  await setSetting(SETTINGS_KEYS.serverUrl, normalized);
+  if (previous !== normalized) {
+    await setSetting(SETTINGS_KEYS.lastSyncCursor, 0);
+    await setSetting('loggedIn', false);
+    await db.settings.delete('lastSyncState');
+  }
 }
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const base = await getServerUrl();
   if (!base) throw new Error('未配置同步服务器地址');
-  return fetch(`${base}/api/v1${path}`, { credentials: 'include', ...init });
+  const response = await fetch(`${base}/api/v1${path}`, { credentials: 'include', ...init });
+  if (response.status === 401 && path !== '/auth/login') await setSetting('loggedIn', false);
+  return response;
 }
 
 export async function login(username: string, password: string): Promise<void> {
@@ -68,8 +79,10 @@ async function pushOnce(): Promise<{ applied: string[]; conflicts: unknown[] }> 
     body: JSON.stringify({ deviceId, lastCursor, ops }),
   });
   if (!res.ok) throw new Error(`推送失败（${res.status}）`);
-  const data = (await res.json()) as { appliedOpIds: string[]; conflicts: { entityId: string; serverVersion: number; serverPayload: unknown; opId: string }[]; cursor: number };
-  await db.pendingOps.bulkDelete(data.appliedOpIds);
+  const parsed = SyncPushResponse.safeParse(await res.json());
+  if (!parsed.success) throw new Error('同步服务器返回了无效的推送响应');
+  const data = parsed.data;
+  await deletePendingOpsByOpId(data.appliedOpIds);
   // 注意：push 不推进游标；游标只由 pull 推进，否则其他设备的较小 seq 会被跳过
   // Version conflicts: keep both candidates for user resolution; never silently overwrite.
   for (const c of data.conflicts) {
@@ -83,7 +96,7 @@ async function pushOnce(): Promise<{ applied: string[]; conflicts: unknown[] }> 
         serverVersion: c.serverVersion,
         createdAt: new Date().toISOString(),
       });
-      await db.pendingOps.delete(local.opId);
+      await deletePendingOpsByOpId([local.opId]);
     }
   }
   void data.cursor;
@@ -94,43 +107,64 @@ async function pullOnce(): Promise<number> {
   const cursor = await getSetting<number>(SETTINGS_KEYS.lastSyncCursor, 0);
   const res = await apiFetch(`/sync/pull?cursor=${cursor}`);
   if (!res.ok) throw new Error(`拉取失败（${res.status}）`);
-  const data = (await res.json()) as { cursor: number; ops: { entity: string; entityId: string; payload: Record<string, unknown> | null }[] };
+  const parsed = SyncPullResponse.safeParse(await res.json());
+  if (!parsed.success) throw new Error('同步服务器返回了无效的拉取响应');
+  const data = parsed.data;
   await applyRemoteOps(data.ops);
   await setSetting(SETTINGS_KEYS.lastSyncCursor, data.cursor);
   return data.ops.length;
 }
 
 /** Apply remote ops idempotently: entity tables are keyed by stable UUID, ops by opId. */
-export async function applyRemoteOps(ops: { entity: string; entityId: string; payload: Record<string, unknown> | null }[]): Promise<void> {
-  for (const op of ops) {
-    // null payload = 删除标记（tombstone）：本地同样删除，避免远端复活
-    if (!op.payload) {
+export async function applyRemoteOps(ops: { entity: string; entityId: string; payload?: unknown | null }[]): Promise<void> {
+  await db.transaction('rw', [
+    db.categories, db.entries, db.paths, db.pathItems, db.progressEvents,
+    db.todos, db.goals, db.quickActions, db.settings,
+  ], async () => {
+    for (const op of ops) {
+      if (op.payload === undefined) throw new Error(`远端 ${op.entity} 操作缺少 payload`);
+      // null payload = 删除标记（tombstone）：本地同样删除，避免远端复活
+      if (op.payload == null) {
+        switch (op.entity) {
+          case 'category': await db.categories.delete(op.entityId); break;
+          case 'entry': await db.entries.delete(op.entityId); break;
+          case 'path': await db.paths.delete(op.entityId); break;
+          case 'pathItem': await db.pathItems.delete(op.entityId); break;
+          case 'progressEvent': await db.progressEvents.delete(op.entityId); break;
+          case 'todo': await db.todos.delete(op.entityId); break;
+          case 'goal': await db.goals.delete(op.entityId); break;
+          case 'quickAction': await db.quickActions.delete(op.entityId); break;
+          case 'settings': await db.settings.delete(op.entityId); break;
+          default: break;
+        }
+        continue;
+      }
+      if (typeof op.payload !== 'object' || Array.isArray(op.payload)) {
+        throw new Error(`远端 ${op.entity} 数据格式不正确`);
+      }
+      if (op.entity === 'settings') {
+        const setting = op.payload as { key?: string; value?: unknown };
+        if (setting.key !== op.entityId) throw new Error('远端设置标识与操作不一致');
+        await db.settings.put({ key: setting.key, value: setting.value });
+        continue;
+      }
+      const p = op.payload as { id?: string; version?: number; deletedAt?: string | null };
+      if (p.id !== op.entityId) {
+        throw new Error(`远端 ${op.entity} 标识与操作不一致`);
+      }
       switch (op.entity) {
-        case 'category': await db.categories.delete(op.entityId); break;
-        case 'entry': await db.entries.delete(op.entityId); break;
-        case 'path': await db.paths.delete(op.entityId); break;
-        case 'pathItem': await db.pathItems.delete(op.entityId); break;
-        case 'progressEvent': await db.progressEvents.delete(op.entityId); break;
-        case 'todo': await db.todos.delete(op.entityId); break;
-        case 'goal': await db.goals.delete(op.entityId); break;
-        case 'quickAction': await db.quickActions.delete(op.entityId); break;
+        case 'category': await db.categories.put(p as never); break;
+        case 'entry': await db.entries.put(p as never); break;
+        case 'path': await db.paths.put(p as never); break;
+        case 'pathItem': await db.pathItems.put(p as never); break;
+        case 'progressEvent': await db.progressEvents.put(p as never); break;
+        case 'todo': await db.todos.put(p as never); break;
+        case 'goal': await db.goals.put(p as never); break;
+        case 'quickAction': await db.quickActions.put(p as never); break;
         default: break;
       }
-      continue;
     }
-    const p = op.payload as { id: string; version?: number; deletedAt?: string | null };
-    switch (op.entity) {
-      case 'category': await db.categories.put(p as never); break;
-      case 'entry': await db.entries.put(p as never); break;
-      case 'path': await db.paths.put(p as never); break;
-      case 'pathItem': await db.pathItems.put(p as never); break;
-      case 'progressEvent': await db.progressEvents.put(p as never); break;
-      case 'todo': await db.todos.put(p as never); break;
-      case 'goal': await db.goals.put(p as never); break;
-      case 'quickAction': await db.quickActions.put(p as never); break;
-      default: break;
-    }
-  }
+  });
 }
 
 let syncing = false;
@@ -158,6 +192,7 @@ export async function syncNow(): Promise<SyncState> {
   } catch (err) {
     const next: SyncState = {
       ...state,
+      loggedIn: await getSetting<boolean>('loggedIn', false),
       lastError: err instanceof Error ? err.message : String(err),
       pendingCount: await db.pendingOps.count(),
     };

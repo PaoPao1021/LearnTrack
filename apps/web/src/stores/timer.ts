@@ -4,6 +4,7 @@ import { enqueueOp, bumpVersion } from '../services/queue';
 import { uuid, nowIso, TZ } from '../utils';
 import type { EntryRecord } from '@learntrack/domain';
 import { effectiveSecondsBetween } from '@learntrack/domain';
+import { ensureDeviceId } from '../db/seed';
 
 export type TimerStatus = 'idle' | 'running' | 'paused';
 
@@ -123,9 +124,10 @@ export const useTimer = create<TimerState>((set, get) => ({
       set(cleared);
       return null;
     }
+    const deviceId = await ensureDeviceId();
     const entry: EntryRecord = {
       id: uuid(),
-      deviceId: await (await import('../db/seed')).ensureDeviceId(),
+      deviceId,
       activityId: s.activityId,
       method: 'timer',
       learningDate: new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(s.startedAt)),
@@ -140,8 +142,10 @@ export const useTimer = create<TimerState>((set, get) => ({
       deletedAt: null,
       version: 1,
     };
-    await db.entries.add(entry);
-    await enqueueOp('entry', entry.id, entry, null);
+    await db.transaction('rw', db.entries, db.pendingOps, async () => {
+      await db.entries.add(entry);
+      await enqueueOp('entry', entry.id, entry, null, null, deviceId);
+    });
     const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null };
     savePersisted(cleared);
     set(cleared);

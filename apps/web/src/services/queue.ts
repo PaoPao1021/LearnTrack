@@ -12,8 +12,9 @@ export async function enqueueOp(
   payload: unknown,
   baseVersion: number | null,
   opGroupId: string | null = null,
+  knownDeviceId?: string,
 ): Promise<string> {
-  const deviceId = await ensureDeviceId();
+  const deviceId = knownDeviceId ?? await ensureDeviceId();
   const opId = uuid();
   await db.pendingOps.add({
     opId,
@@ -27,6 +28,14 @@ export async function enqueueOp(
   });
   void SETTINGS_KEYS;
   return opId;
+}
+
+/** pendingOps is keyed by auto-increment seq, so resolve opIds before deletion. */
+export async function deletePendingOpsByOpId(opIds: string[]): Promise<void> {
+  if (opIds.length === 0) return;
+  const rows = await db.pendingOps.where('opId').anyOf(opIds).toArray();
+  const keys = rows.flatMap((row) => row.seq == null ? [] : [row.seq]);
+  if (keys.length > 0) await db.pendingOps.bulkDelete(keys);
 }
 
 export function bumpVersion(v: number): number {

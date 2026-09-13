@@ -1,17 +1,48 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
+import { Modal } from '../../components/common/Modal';
+import { Segmented } from '../../components/common/Segmented';
+import { THEME_CHANGE_EVENT } from '../settings/useTheme';
 import {
   computeStats, formatDuration, previousRange, daysBetweenInclusive,
-  splitRangeByLocalDay,
+  entrySecondsByLocalDay,
 } from '@learntrack/domain';
 import { todayKey, TZ } from '../../utils';
-import * as echarts from 'echarts';
+import * as echarts from 'echarts/core';
+import { BarChart, HeatmapChart, LineChart, PieChart } from 'echarts/charts';
+import {
+  CalendarComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
 import type { StatsResult, CategoryTotals, Category, EntryRecord } from '@learntrack/domain';
 import { ChevronRight, Layers, BarChart3, Clock3, Flame, ListChecks } from 'lucide-react';
 
+echarts.use([
+  BarChart, HeatmapChart, LineChart, PieChart,
+  CalendarComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent,
+  CanvasRenderer,
+]);
+
 type Preset = 'day' | 'week' | 'month' | 'year' | 'custom';
 type Granularity = 'auto' | 'day' | 'week' | 'month';
+
+/** ECharts 需要可直接解析的色值：从设计令牌读取（不能给 color-mix 表达式） */
+function cssVar(name: string, fallback: string): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function chartPalette() {
+  return {
+    accent: cssVar('--accent', '#007aff'),
+    label: cssVar('--chart-label', '#566070'),
+    line: cssVar('--chart-line', 'rgba(23,30,46,0.12)'),
+    grid: cssVar('--chart-grid', 'rgba(23,30,46,0.07)'),
+    prev: cssVar('--chart-label', '#9ca3af'),
+  };
+}
 
 function rangeFor(preset: Preset, customFrom: string, customTo: string): { from: string; to: string } {
   const today = todayKey();
@@ -76,18 +107,12 @@ function buildMajorSeries(
   const maps = new Map<string, Map<string, number>>(); // majorId -> dayKey -> seconds
   for (const e of entries) {
     if (e.deletedAt) continue;
-    if (e.learningDate < from || e.learningDate > to) continue;
     const major = majorOf(e.activityId);
     if (!major) continue;
     let perDay = maps.get(major.id);
     if (!perDay) { perDay = new Map(); maps.set(major.id, perDay); }
-    if (e.startedAt != null && e.endedAt != null) {
-      const buckets = splitRangeByLocalDay(e.startedAt, e.endedAt, e.timeZone, e.pauseIntervals ?? []);
-      for (const [day, s] of Object.entries(buckets)) {
-        if (day >= from && day <= to) perDay.set(day, (perDay.get(day) ?? 0) + s);
-      }
-    } else {
-      perDay.set(e.learningDate, (perDay.get(e.learningDate) ?? 0) + e.durationSeconds);
+    for (const [day, seconds] of Object.entries(entrySecondsByLocalDay(e))) {
+      if (day >= from && day <= to) perDay.set(day, (perDay.get(day) ?? 0) + seconds);
     }
   }
 
@@ -102,7 +127,7 @@ function buildMajorSeries(
 }
 
 function streakOf(entries: EntryRecord[]): { current: number; longest: number } {
-  const days = new Set(entries.filter((e) => !e.deletedAt).map((e) => e.learningDate));
+  const days = new Set(entries.filter((e) => !e.deletedAt).flatMap((e) => Object.keys(entrySecondsByLocalDay(e))));
   if (days.size === 0) return { current: 0, longest: 0 };
   const sorted = [...days].sort();
   let longest = 1; let run = 1;
@@ -124,38 +149,74 @@ function streakOf(entries: EntryRecord[]): { current: number; longest: number } 
   return { current, longest };
 }
 
+function entrySecondsInRange(entry: EntryRecord, from: string, to: string): number {
+  if (entry.deletedAt) return 0;
+  return Object.entries(entrySecondsByLocalDay(entry))
+    .filter(([day]) => day >= from && day <= to)
+    .reduce((sum, [, seconds]) => sum + seconds, 0);
+}
+
 function DrillModal({ title, entries, onClose }: { title: string; entries: EntryRecord[]; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="card max-h-[80vh] w-full max-w-lg overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
-        <h2 className="display mb-3 text-lg">{title}</h2>
-        {entries.length === 0 && <p className="text-sm opacity-60">没有记录。</p>}
-        <ul className="space-y-2 text-sm">
-          {entries.map((e) => (
-            <li key={e.id} className="rounded-lg px-3 py-2" style={{ background: 'color-mix(in srgb, var(--ink) 5%, transparent)' }}>
-              <span className="font-semibold">{formatDuration(e.durationSeconds)}</span>
-              {e.startedAt != null && (
-                <span className="ml-2 text-xs opacity-60">
-                  {new Date(e.startedAt).toLocaleString('zh-CN', { timeZone: TZ, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 起
-                </span>
-              )}
-              {e.note ? <span className="ml-2 opacity-70">{e.note}</span> : null}
-            </li>
-          ))}
-        </ul>
-      </div>
+    <Modal labelledBy="drill-title" onClose={onClose} panelClassName="modal-panel glass-emphasis max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5">
+      <h2 id="drill-title" className="display mb-3 text-lg">{title}</h2>
+      {entries.length === 0 && <p className="text-sm opacity-60">没有记录。</p>}
+      <ul className="space-y-2 text-sm">
+        {entries.map((e) => (
+          <li key={e.id} className="rounded-lg px-3 py-2" style={{ background: 'color-mix(in srgb, var(--ink) 5%, transparent)' }}>
+            <span className="font-semibold">{formatDuration(e.durationSeconds)}</span>
+            {e.startedAt != null && (
+              <span className="ml-2 text-xs opacity-60">
+                {new Date(e.startedAt).toLocaleString('zh-CN', { timeZone: TZ, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 起
+              </span>
+            )}
+            {e.note ? <span className="ml-2 opacity-70">{e.note}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+}
+
+/** 图表容器的空状态覆盖层：空数据不再只剩空白坐标轴。 */
+function ChartEmpty({ text = '所选范围内暂无记录' }: { text?: string }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center">
+      <p className="text-sm opacity-60">{text}</p>
     </div>
   );
 }
 
 export default function Analytics() {
-  const [preset, setPreset] = useState<Preset>('week');
-  const [customFrom, setCustomFrom] = useState(todayKey());
-  const [customTo, setCustomTo] = useState(todayKey());
-  const [granularity, setGranularity] = useState<Granularity>('auto');
+  // 预设、自定义范围与粒度保存在 URL：刷新、返回、分享链接都能还原上下文
+  const [searchParams, setSearchParams] = useSearchParams();
+  const PRESETS: Preset[] = ['day', 'week', 'month', 'year', 'custom'];
+  const presetRaw = searchParams.get('preset') as Preset | null;
+  const preset: Preset = presetRaw && PRESETS.includes(presetRaw) ? presetRaw : 'week';
+  const customFrom = searchParams.get('from') ?? todayKey();
+  const customTo = searchParams.get('to') ?? todayKey();
+  const granRaw = searchParams.get('gran') as Granularity | null;
+  const granularity: Granularity = granRaw && ['auto', 'day', 'week', 'month'].includes(granRaw) ? granRaw : 'auto';
+
+  const setParams = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value == null || value === '') next.delete(key);
+      else next.set(key, value);
+    }
+    setSearchParams(next);
+  };
+
   const entries = useLiveQuery(() => db.entries.toArray(), [], [] as EntryRecord[]);
   const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
   const [drill, setDrill] = useState<{ title: string; entries: EntryRecord[] } | null>(null);
+  // 主题切换（深浅色 / 强调色）后重绘图表，读取新的调色令牌
+  const [themeTick, bumpThemeTick] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const handler = () => bumpThemeTick();
+    window.addEventListener(THEME_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, handler);
+  }, []);
 
   const range = rangeFor(preset, customFrom, customTo);
   const stats: StatsResult = useMemo(
@@ -198,14 +259,21 @@ export default function Analytics() {
 
   // 主趋势：各科目叠加曲线 + 上期总量灰色虚线（按索引对齐）
   const trendRef = useChart((chart) => {
-    const cur = aggregateSeries(stats.byDay.map((d) => d.seconds), stats.byDay.map((d) => d.date));
-    const prevAgg = aggregateSeries(prevStats.byDay.map((d) => d.seconds), prevStats.byDay.map((d) => d.date));
+    const palette = chartPalette();
+    const currentByDay = new Map(stats.byDay.map((d) => [d.date, d.seconds]));
+    const previousByDay = new Map(prevStats.byDay.map((d) => [d.date, d.seconds]));
+    const cur = aggregateSeries(majorSeries.days.map((day) => currentByDay.get(day) ?? 0), majorSeries.days);
+    const prevAgg = aggregateSeries(prevMajorSeries.days.map((day) => previousByDay.get(day) ?? 0), prevMajorSeries.days);
     chart.setOption({
       tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatDuration(Number(v)) },
-      legend: { top: 0, textStyle: { fontSize: 11 } },
+      legend: { top: 0, textStyle: { fontSize: 11, color: palette.label } },
       grid: { left: 48, right: 12, top: 36, bottom: 24 },
-      xAxis: { type: 'category', data: cur.labels, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', splitNumber: 4, axisLabel: { formatter: (v: number) => `${Math.round(v / 3600)}h` } },
+      xAxis: { type: 'category', data: cur.labels, axisLabel: { fontSize: 10, color: palette.label }, axisLine: { lineStyle: { color: palette.line } } },
+      yAxis: {
+        type: 'value', splitNumber: 4,
+        axisLabel: { formatter: (v: number) => `${Math.round(v / 3600)}h`, color: palette.label },
+        splitLine: { lineStyle: { color: palette.grid } },
+      },
       series: [
         ...majorSeries.series.map((s) => ({
           name: s.name, type: 'line' as const, smooth: true, symbol: 'none',
@@ -216,22 +284,23 @@ export default function Analytics() {
         {
           name: '上期', type: 'line' as const, smooth: true, symbol: 'none',
           data: prevAgg.values, lineStyle: { width: 1.5, type: 'dashed', opacity: 0.5 },
-          itemStyle: { color: '#9ca3af' },
+          itemStyle: { color: palette.prev },
         },
       ],
     });
-  }, [stats.byDay, prevStats.byDay, majorSeries, prevMajorSeries, gran]);
+  }, [stats.byDay, prevStats.byDay, majorSeries, prevMajorSeries, gran, themeTick]);
 
-  // 扇形图：双层环，内环大科目，外环具体科目；点击下钻原始记录
+  // 扇形图：双层环，内环大科目，外环具体科目；点击下钻原始记录（零值分类不参与渲染）
   const pieRef = useChart((chart) => {
-    const inner = stats.categories.map((c) => ({ name: catName(c.categoryId), value: c.totalSeconds, id: c.categoryId }));
+    const palette = chartPalette();
+    const inner = stats.categories.map((c) => ({ name: catName(c.categoryId), value: c.totalSeconds, id: c.categoryId })).filter((d) => d.value > 0);
     const outer = stats.categories.flatMap((m) =>
       m.children.map((s) => ({ name: catName(s.categoryId), value: s.totalSeconds, id: s.categoryId })),
-    );
+    ).filter((d) => d.value > 0);
     const colorOf = (id: string) => byId.get(id)?.color;
     chart.setOption({
       tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}：${formatDuration(p.value)}（${p.percent}%）` },
-      legend: { bottom: 0, textStyle: { fontSize: 10 }, type: 'scroll' },
+      legend: { bottom: 0, textStyle: { fontSize: 10, color: palette.label }, type: 'scroll' },
       series: [
         {
           type: 'pie', radius: ['34%', '52%'], label: { show: false },
@@ -250,7 +319,7 @@ export default function Analytics() {
       // 命中该分类自身及直接子分类的记录
       const childIds = new Set((categories ?? []).filter((c) => c.parentId === id).map((c) => c.id));
       const hits = (entries ?? []).filter((e) => {
-        if (e.deletedAt || e.learningDate < range.from || e.learningDate > range.to) return false;
+        if (entrySecondsInRange(e, range.from, range.to) <= 0) return false;
         return e.activityId === id || childIds.has(e.activityId)
           || (() => {
             const activity = byId.get(e.activityId);
@@ -260,7 +329,7 @@ export default function Analytics() {
       });
       setDrill({ title: `${catName(id)} 的记录（${range.from} 至 ${range.to}）`, entries: hits });
     });
-  }, [stats.categories, categories, entries, range.from, range.to]);
+  }, [stats.categories, categories, entries, range.from, range.to, themeTick]);
 
   // 科目排行（具体科目横向条形）
   const ranking = useMemo(() => {
@@ -270,22 +339,23 @@ export default function Analytics() {
         list.push({ name: catName(s.categoryId), color: byId.get(s.categoryId)?.color ?? '#888', seconds: s.totalSeconds });
       }
     }
-    return list.sort((a, b) => b.seconds - a.seconds).slice(0, 10);
+    return list.filter((r) => r.seconds > 0).sort((a, b) => b.seconds - a.seconds).slice(0, 10);
   }, [stats.categories, categories]);
 
   const rankRef = useChart((chart) => {
+    const palette = chartPalette();
     chart.setOption({
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => formatDuration(Number(v)) },
       grid: { left: 90, right: 52, top: 8, bottom: 8 },
       xAxis: { type: 'value', show: false },
-      yAxis: { type: 'category', inverse: true, data: ranking.map((r) => r.name), axisLabel: { fontSize: 11 } },
+      yAxis: { type: 'category', inverse: true, data: ranking.map((r) => r.name), axisLabel: { fontSize: 11, color: palette.label } },
       series: [{
         type: 'bar', barWidth: 12, borderRadius: 6,
         data: ranking.map((r) => ({ value: r.seconds, itemStyle: { color: r.color } })),
-        label: { show: true, position: 'right', fontSize: 10, formatter: (p: { value: number }) => `${(p.value / 3600).toFixed(1)}h` },
+        label: { show: true, position: 'right', fontSize: 10, color: palette.label, formatter: (p: { value: number }) => `${(p.value / 3600).toFixed(1)}h` },
       }],
     });
-  }, [ranking]);
+  }, [ranking, themeTick]);
 
   // 单次时长分布
   const durationDist = useMemo(() => {
@@ -296,7 +366,7 @@ export default function Analytics() {
       { label: '2 小时以上', min: 7200, max: Infinity, count: 0 },
     ];
     for (const e of entries ?? []) {
-      if (e.deletedAt || e.learningDate < range.from || e.learningDate > range.to) continue;
+      if (entrySecondsInRange(e, range.from, range.to) <= 0) continue;
       const b = buckets.find((x) => e.durationSeconds >= x.min && e.durationSeconds < x.max);
       if (b) b.count += 1;
     }
@@ -304,26 +374,33 @@ export default function Analytics() {
   }, [entries, range.from, range.to]);
 
   const distRef = useChart((chart) => {
+    const palette = chartPalette();
     chart.setOption({
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       grid: { left: 40, right: 12, top: 12, bottom: 24 },
-      xAxis: { type: 'category', data: durationDist.map((b) => b.label), axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', minInterval: 1, splitNumber: 3 },
-      series: [{ type: 'bar', barWidth: 26, borderRadius: [6, 6, 0, 0], data: durationDist.map((b) => b.count), itemStyle: { color: '#2f5cff' } }],
+      xAxis: { type: 'category', data: durationDist.map((b) => b.label), axisLabel: { fontSize: 10, color: palette.label }, axisLine: { lineStyle: { color: palette.line } } },
+      yAxis: { type: 'value', minInterval: 1, splitNumber: 3, axisLabel: { color: palette.label }, splitLine: { lineStyle: { color: palette.grid } } },
+      series: [{ type: 'bar', barWidth: 26, borderRadius: [6, 6, 0, 0], data: durationDist.map((b) => b.count), itemStyle: { color: palette.accent } }],
     });
-  }, [durationDist]);
+  }, [durationDist, themeTick]);
 
   const hourRef = useChart((chart) => {
+    const palette = chartPalette();
     chart.setOption({
       tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatDuration(Number(v)) },
       grid: { left: 44, right: 12, top: 12, bottom: 24 },
-      xAxis: { type: 'category', data: stats.byHour.map((h) => `${h.hour}`), axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', splitNumber: 3, axisLabel: { formatter: (v: number) => `${Math.round(v / 3600)}h` } },
-      series: [{ type: 'bar', barWidth: '70%', borderRadius: [4, 4, 0, 0], data: stats.byHour.map((h) => h.seconds), itemStyle: { color: '#2f5cff' } }],
+      xAxis: { type: 'category', data: stats.byHour.map((h) => `${h.hour}`), axisLabel: { fontSize: 10, color: palette.label }, axisLine: { lineStyle: { color: palette.line } } },
+      yAxis: {
+        type: 'value', splitNumber: 3,
+        axisLabel: { formatter: (v: number) => `${Math.round(v / 3600)}h`, color: palette.label },
+        splitLine: { lineStyle: { color: palette.grid } },
+      },
+      series: [{ type: 'bar', barWidth: '70%', borderRadius: [4, 4, 0, 0], data: stats.byHour.map((h) => h.seconds), itemStyle: { color: palette.accent } }],
     });
-  }, [stats.byHour]);
+  }, [stats.byHour, themeTick]);
 
   const heatRef = useChart((chart) => {
+    const palette = chartPalette();
     const yearStart = `${todayKey().slice(0, 4)}-01-01`;
     const data = stats.byDay.map((d) => [d.date, d.seconds]);
     chart.setOption({
@@ -333,19 +410,23 @@ export default function Analytics() {
         range: [yearStart, todayKey()],
         cellSize: ['auto', 14],
         left: 48, top: 24,
-        itemStyle: { color: 'rgba(128,128,128,0.12)' },
+        itemStyle: { color: 'rgba(128,128,128,0.12)', borderColor: 'transparent' },
+        dayLabel: { color: palette.label },
+        monthLabel: { color: palette.label },
         yearLabel: { show: false },
       },
       series: [{
         type: 'heatmap', coordinateSystem: 'calendar', data,
         itemStyle: { borderRadius: 3 },
-        onClick: (params: { value: [string, number] }) => {
-          const day = params.value[0];
-          setDrill({ title: `${day} 的记录`, entries: (entries ?? []).filter((e) => e.learningDate === day && !e.deletedAt) });
-        },
       }],
     });
-  }, [stats.byDay, entries]);
+    chart.off('click');
+    chart.on('click', (params: unknown) => {
+      const day = (params as { value?: [string, number] }).value?.[0];
+      if (!day) return;
+      setDrill({ title: `${day} 的记录`, entries: (entries ?? []).filter((e) => !e.deletedAt && (entrySecondsByLocalDay(e)[day] ?? 0) > 0) });
+    });
+  }, [stats.byDay, entries, themeTick]);
 
   const deltaPct = prevStats.totalSeconds > 0
     ? Math.round(((stats.totalSeconds - prevStats.totalSeconds) / prevStats.totalSeconds) * 100)
@@ -357,20 +438,27 @@ export default function Analytics() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="display text-xl">统计</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          {(['day', 'week', 'month', 'year', 'custom'] as Preset[]).map((p) => (
-            <button key={p} className={preset === p ? 'btn-primary px-3.5 py-1.5 text-xs' : 'btn-ghost px-3.5 py-1.5 text-xs'} onClick={() => setPreset(p)}>
-              {{ day: '今日', week: '本周', month: '本月', year: '今年', custom: '自定义' }[p]}
-            </button>
-          ))}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-2 md:justify-end">
+          <Segmented
+            ariaLabel="统计范围"
+            value={preset}
+            onChange={(p) => setParams({ preset: p })}
+            options={[
+              { value: 'day', label: '今日' },
+              { value: 'week', label: '本周' },
+              { value: 'month', label: '本月' },
+              { value: 'year', label: '今年' },
+              { value: 'custom', label: '自定义' },
+            ] as const}
+          />
           {preset === 'custom' && (
             <span className="flex items-center gap-2">
-              <input type="date" className="input w-auto py-1.5 text-xs" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-              <span className="text-xs opacity-50">至</span>
-              <input type="date" className="input w-auto py-1.5 text-xs" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+              <input type="date" className="input w-auto py-1.5 text-xs" aria-label="开始日期" value={customFrom} onChange={(e) => setParams({ from: e.target.value })} />
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>至</span>
+              <input type="date" className="input w-auto py-1.5 text-xs" aria-label="结束日期" value={customTo} onChange={(e) => setParams({ to: e.target.value })} />
             </span>
           )}
-          <select className="input py-1.5 text-xs" style={{ width: 132 }} value={granularity} onChange={(e) => setGranularity(e.target.value as Granularity)} aria-label="趋势粒度">
+          <select className="input py-1.5 text-xs" style={{ width: 132 }} value={granularity} onChange={(e) => setParams({ gran: e.target.value })} aria-label="趋势粒度">
             <option value="auto">粒度：自动</option>
             <option value="day">按日</option>
             <option value="week">按周</option>
@@ -416,15 +504,36 @@ export default function Analytics() {
           </div>
           {bestDay && <span className="chart-title">单日峰值 {bestDay.date} · {formatDuration(bestDay.seconds)}</span>}
         </div>
-        <div ref={trendRef} className="h-64" />
+        <div
+          className="relative"
+          role="img"
+          aria-label={`学习趋势图：范围内总时长 ${formatDuration(stats.totalSeconds)}${bestDay ? `，单日峰值 ${bestDay.date} ${formatDuration(bestDay.seconds)}` : ''}。文字版见下方活动明细表。`}
+        >
+          <div ref={trendRef} className="h-64" />
+          {stats.entryCount === 0 && <ChartEmpty />}
+        </div>
+        <p className="sr-only">
+          {majorSeries.series.length > 0
+            ? `各科目总时长：${majorSeries.series.map((s) => `${s.name} ${formatDuration(s.data.reduce((sum, v) => sum + v, 0))}`).join('，')}`
+            : '各科目暂无时长记录'}
+        </p>
       </section>
 
       {/* 扇形图 + 排行 */}
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card p-5">
           <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> 科目分布</h2>
-          <p className="chart-title mb-2">内环大科目 · 外环具体科目 · 点击任意扇区查看原始记录</p>
-          <div ref={pieRef} className="h-72" />
+          <p className="chart-title mb-2">内环大科目 · 外环具体科目 · 原始记录请用下方活动明细表（键盘可用）</p>
+          <div
+            className="relative"
+            role="img"
+            aria-label={topSubject
+              ? `科目分布环形图：投入最多 ${catName(topSubject.categoryId)}，${formatDuration(topSubject.totalSeconds)}，占 ${Math.round(topSubject.share * 100)}%`
+              : '科目分布环形图：暂无数据'}
+          >
+            <div ref={pieRef} className="h-72" />
+            {stats.totalSeconds === 0 && <ChartEmpty />}
+          </div>
           {topSubject && (
             <p className="chart-title text-center">
               投入最多：{catName(topSubject.categoryId)} · {formatDuration(topSubject.totalSeconds)}（{Math.round(topSubject.share * 100)}%）
@@ -434,7 +543,16 @@ export default function Analytics() {
         <section className="card p-5">
           <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> 具体科目排行</h2>
           <p className="chart-title mb-2">所选范围内 Top 10</p>
-          <div ref={rankRef} className="h-72" />
+          <div
+            className="relative"
+            role="img"
+            aria-label={ranking.some((r) => r.seconds > 0)
+              ? `具体科目排行：${ranking.slice(0, 3).map((r) => `${r.name} ${formatDuration(r.seconds)}`).join('，')}`
+              : '具体科目排行：暂无数据'}
+          >
+            <div ref={rankRef} className="h-72" />
+            {stats.totalSeconds === 0 && <ChartEmpty />}
+          </div>
         </section>
       </div>
 
@@ -445,51 +563,82 @@ export default function Analytics() {
           <p className="chart-title mb-2">
             仅真实时间段记录（覆盖率 {Math.round(stats.rangeCoverage * 100)}%）· 未指定时段 {formatDuration(stats.unspecifiedSeconds)} 不随机分配
           </p>
-          <div ref={hourRef} className="h-52" />
+          <div
+            className="relative"
+            role="img"
+            aria-label={`小时分布图：时间段记录覆盖率 ${Math.round(stats.rangeCoverage * 100)}%`}
+          >
+            <div ref={hourRef} className="h-52" />
+            {stats.byHour.every((h) => h.seconds === 0) && <ChartEmpty />}
+          </div>
         </section>
         <section className="card p-5">
           <h2 className="display mb-1 flex items-center gap-2 text-lg"><ListChecks size={17} /> 单次时长分布</h2>
           <p className="chart-title mb-2">一次记录的长短习惯（条数）</p>
-          <div ref={distRef} className="h-52" />
+          <div
+            className="relative"
+            role="img"
+            aria-label={`单次时长分布：${durationDist.map((b) => `${b.label} ${b.count} 条`).join('，')}`}
+          >
+            <div ref={distRef} className="h-52" />
+            {durationDist.every((b) => b.count === 0) && <ChartEmpty />}
+          </div>
         </section>
       </div>
 
       {/* 活动明细表 */}
       <section className="card p-5">
         <h2 className="display mb-1 flex items-center gap-2 text-lg"><ListChecks size={17} /> 活动明细</h2>
-        <p className="chart-title mb-3">活动级汇总，点击行查看原始记录</p>
+        <p className="chart-title mb-3">活动级汇总，点击行或按回车查看原始记录（图表的键盘等价操作）</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-125 text-sm">
+            <caption className="sr-only">所选时间范围内各活动的次数、时长与占比</caption>
             <thead>
               <tr className="border-b text-left hairline">
-                <th className="py-2 pr-4 font-medium">活动</th>
-                <th className="py-2 pr-4 text-right font-medium">次数</th>
-                <th className="py-2 pr-4 text-right font-medium">时长</th>
-                <th className="py-2 pr-4 text-right font-medium">占比</th>
-                <th className="py-2 font-medium">分布</th>
+                <th className="py-2 pr-4 font-medium" scope="col">活动</th>
+                <th className="py-2 pr-4 text-right font-medium" scope="col">次数</th>
+                <th className="py-2 pr-4 text-right font-medium" scope="col">时长</th>
+                <th className="py-2 pr-4 text-right font-medium" scope="col">占比</th>
+                <th className="py-2 font-medium" scope="col">分布</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
                 const activityAgg = new Map<string, { seconds: number; count: number }>();
                 for (const e of entries ?? []) {
-                  if (e.deletedAt || e.learningDate < range.from || e.learningDate > range.to) continue;
+                  const seconds = entrySecondsInRange(e, range.from, range.to);
+                  if (seconds <= 0) continue;
                   const a = activityAgg.get(e.activityId) ?? { seconds: 0, count: 0 };
-                  a.seconds += e.durationSeconds; a.count += 1;
+                  a.seconds += seconds; a.count += 1;
                   activityAgg.set(e.activityId, a);
                 }
                 const rows = [...activityAgg.entries()]
                   .map(([id, v]) => ({ id, ...v, name: catName(id) }))
                   .sort((a, b) => b.seconds - a.seconds);
+                if (rows.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-sm opacity-60">所选范围内暂无记录</td>
+                    </tr>
+                  );
+                }
                 const max = Math.max(1, ...rows.map((r) => r.seconds));
                 return rows.map((r) => {
                   const a = byId.get(r.id);
                   const s = a?.parentId ? byId.get(a.parentId) : undefined;
                   const mj = s?.parentId ? byId.get(s.parentId) : undefined;
+                  const openDrill = () => {
+                    setDrill({ title: `${r.name} 的记录（${range.from} 至 ${range.to}）`, entries: (entries ?? []).filter((e) => e.activityId === r.id && entrySecondsInRange(e, range.from, range.to) > 0) });
+                  };
                   return (
-                    <tr key={r.id} className="cursor-pointer border-b hairline hover:opacity-80" onClick={() => {
-                      setDrill({ title: `${r.name} 的记录（${range.from} 至 ${range.to}）`, entries: (entries ?? []).filter((e) => e.activityId === r.id && !e.deletedAt && e.learningDate >= range.from && e.learningDate <= range.to) });
-                    }}>
+                    <tr
+                      key={r.id}
+                      tabIndex={0}
+                      aria-label={`查看 ${r.name} 的原始记录`}
+                      className="cursor-pointer border-b hairline hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                      onClick={openDrill}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDrill(); } }}
+                    >
                       <td className="py-2 pr-4">
                         <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: a?.color ?? '#888' }} />
                         <span className="opacity-60">{mj?.name} / {s?.name} / </span>{r.name}
@@ -513,9 +662,31 @@ export default function Analytics() {
 
       {/* 热力图 */}
       <section className="card p-5">
-        <h2 className="display mb-1 text-lg">学习热力图</h2>
-        <p className="chart-title mb-2">本年度按日展示 · 点击某天查看明细</p>
-        <div ref={heatRef} className="h-40" />
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="display text-lg">学习热力图</h2>
+          <div className="flex items-center gap-2">
+            <label className="chart-title" htmlFor="heat-day-input">查看某日明细</label>
+            <input
+              id="heat-day-input"
+              type="date"
+              className="input w-auto py-1.5 text-xs"
+              onChange={(e) => {
+                const day = e.target.value;
+                if (!day) return;
+                setDrill({ title: `${day} 的记录`, entries: (entries ?? []).filter((en) => !en.deletedAt && (entrySecondsByLocalDay(en)[day] ?? 0) > 0) });
+              }}
+            />
+          </div>
+        </div>
+        <p className="chart-title mb-2">本年度按日展示</p>
+        <div
+          className="relative"
+          role="img"
+          aria-label={`本年度学习热力图：当前连续学习 ${streak.current} 天，最长连续 ${streak.longest} 天`}
+        >
+          <div ref={heatRef} className="h-40" />
+          {stats.byDay.every((d) => d.seconds === 0) && <ChartEmpty />}
+        </div>
       </section>
 
       {/* 状态与打断 */}

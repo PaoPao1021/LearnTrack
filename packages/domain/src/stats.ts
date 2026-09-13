@@ -45,6 +45,29 @@ export interface StatsOptions {
   timeZone: string;
 }
 
+/** Split one entry into authoritative local-day buckets. */
+export function entrySecondsByLocalDay(entry: EntryRecord): Record<string, number> {
+  if (entry.startedAt == null || entry.endedAt == null) {
+    return entry.durationSeconds > 0 ? { [entry.learningDate]: Math.max(0, entry.durationSeconds) } : {};
+  }
+  const buckets = splitRangeByLocalDay(
+    entry.startedAt,
+    entry.endedAt,
+    entry.timeZone,
+    entry.pauseIntervals ?? [],
+  );
+  const keys = Object.keys(buckets).sort();
+  const computed = keys.reduce((sum, key) => sum + (buckets[key] ?? 0), 0);
+  const recorded = Math.max(0, entry.durationSeconds);
+  // Keep the stored duration authoritative while retaining the midnight split.
+  // Normally this only corrects a one-second rounding difference.
+  if (keys.length > 0 && computed !== recorded) {
+    const last = keys[keys.length - 1]!;
+    buckets[last] = Math.max(0, (buckets[last] ?? 0) + recorded - computed);
+  }
+  return buckets;
+}
+
 function activeCategories(categories: Category[]): Map<string, Category> {
   return new Map(categories.filter((c) => !c.deletedAt).map((c) => [c.id, c]));
 }
@@ -78,13 +101,16 @@ export function computeStats(
 
   for (const entry of entries) {
     if (entry.deletedAt) continue;
-    const d = entry.learningDate;
-    if (d < from || d > to) continue;
-    const secs = Math.max(0, entry.durationSeconds);
+    const perDay = entrySecondsByLocalDay(entry);
+    const inRange = Object.entries(perDay).filter(([day]) => day >= from && day <= to);
+    const secs = inRange.reduce((sum, [, seconds]) => sum + seconds, 0);
+    if (secs <= 0) continue;
     totalSeconds += secs;
     entryCount += 1;
-    activeDays.add(d);
-    dayMap.set(d, (dayMap.get(d) ?? 0) + secs);
+    for (const [day, seconds] of inRange) {
+      activeDays.add(day);
+      dayMap.set(day, (dayMap.get(day) ?? 0) + seconds);
+    }
 
     if (entry.startedAt != null && entry.endedAt != null) {
       rangedSeconds += secs;
@@ -149,15 +175,9 @@ function accumulateHourBuckets(
   const pauses = entry.pauseIntervals ?? [];
   let t = start;
   while (t < end) {
-    const nextHour = Math.floor(t / 3_600_000) * 3_600_000 + 3_600_000;
+    const nextHour = localHourBoundaryAfter(t, end, entry.timeZone);
     const segEnd = Math.min(nextHour, end);
-    let seg = (segEnd - t) / 1000;
-    for (const p of pauses) {
-      const s = Math.max(p.startAt, t);
-      const e = Math.min(p.endAt, segEnd);
-      if (e > s) seg -= (e - s) / 1000;
-    }
-    seg = Math.max(0, Math.round(seg));
+    const seg = effectiveSegmentSeconds(t, segEnd, pauses);
     if (seg > 0) {
       const day = localDateKey(new Date(t), entry.timeZone);
       if (day >= from && day <= to) {
@@ -167,6 +187,65 @@ function accumulateHourBuckets(
     }
     t = segEnd;
   }
+}
+
+function effectiveSegmentSeconds(
+  startAt: number,
+  endAt: number,
+  pauses: { startAt: number; endAt: number }[],
+): number {
+  const clipped = pauses
+    .map((p) => ({ startAt: Math.max(startAt, p.startAt), endAt: Math.min(endAt, p.endAt) }))
+    .filter((p) => p.endAt > p.startAt)
+    .sort((a, b) => a.startAt - b.startAt);
+  let pausedMs = 0;
+  let cursorStart: number | null = null;
+  let cursorEnd: number | null = null;
+  for (const p of clipped) {
+    if (cursorStart == null || cursorEnd == null) {
+      cursorStart = p.startAt;
+      cursorEnd = p.endAt;
+    } else if (p.startAt <= cursorEnd) {
+      cursorEnd = Math.max(cursorEnd, p.endAt);
+    } else {
+      pausedMs += cursorEnd - cursorStart;
+      cursorStart = p.startAt;
+      cursorEnd = p.endAt;
+    }
+  }
+  if (cursorStart != null && cursorEnd != null) pausedMs += cursorEnd - cursorStart;
+  return Math.max(0, Math.round((endAt - startAt - pausedMs) / 1000));
+}
+
+/** Find the next wall-clock hour boundary, including half/quarter-hour time zones. */
+function localHourBoundaryAfter(atMs: number, endAtMs: number, timeZone: string): number {
+  const startKey = localDateHourKey(atMs, timeZone);
+  const step = 15 * 60 * 1000;
+  let hi = Math.min(endAtMs, atMs + step);
+  while (hi < endAtMs && localDateHourKey(hi, timeZone) === startKey) {
+    hi = Math.min(endAtMs, hi + step);
+  }
+  if (localDateHourKey(hi, timeZone) === startKey) return endAtMs;
+  let lo = Math.max(atMs, hi - step);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (localDateHourKey(mid, timeZone) === startKey) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+}
+
+function localDateHourKey(atMs: number, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(atMs));
+  const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}`;
 }
 
 function localHour(date: Date, timeZone: string): number {
@@ -192,8 +271,11 @@ function buildCategoryTotals(
   const secondsByActivity = new Map<string, number>();
   for (const e of entries) {
     if (e.deletedAt) continue;
-    if (e.learningDate < from || e.learningDate > to) continue;
-    secondsByActivity.set(e.activityId, (secondsByActivity.get(e.activityId) ?? 0) + Math.max(0, e.durationSeconds));
+    const seconds = Object.entries(entrySecondsByLocalDay(e))
+      .filter(([day]) => day >= from && day <= to)
+      .reduce((sum, [, value]) => sum + value, 0);
+    if (seconds <= 0) continue;
+    secondsByActivity.set(e.activityId, (secondsByActivity.get(e.activityId) ?? 0) + seconds);
   }
   const totals = new Map<string, number>();
   for (const [activityId, s] of secondsByActivity) {

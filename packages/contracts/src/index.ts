@@ -9,6 +9,11 @@ export const EntryMethod = z.enum(['duration', 'range', 'timer']);
 export const PathMode = z.enum(['chapters', 'quantity']);
 export const GoalPeriod = z.enum(['daily', 'weekly']);
 
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
+  z.string(), z.number(), z.boolean(), z.null(), z.array(JsonValueSchema), z.record(JsonValueSchema),
+]));
+
 export const CategoryDto = z.object({
   id: Uuid,
   level: CategoryLevel,
@@ -61,6 +66,7 @@ export const ProgressEventDto = z.object({
   entryId: Uuid.nullable(),
   undoneAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
+  version: z.number().int().positive(),
 });
 
 export const SyncOpDto = z.object({
@@ -69,7 +75,7 @@ export const SyncOpDto = z.object({
   entity: z.enum(['category', 'entry', 'path', 'pathItem', 'progressEvent', 'todo', 'goal', 'settings', 'quickAction']),
   entityId: z.string().min(1),
   baseVersion: z.number().int().positive().nullable(),
-  payload: z.unknown().nullable(),
+  payload: JsonValueSchema,
   opGroupId: z.string().nullable(),
   clientTimestamp: IsoDateTime,
 });
@@ -88,7 +94,7 @@ export const SyncPushResponse = z.object({
     entity: z.string(),
     entityId: z.string(),
     serverVersion: z.number().int(),
-    serverPayload: z.unknown(),
+    serverPayload: JsonValueSchema,
   })),
   cursor: z.number().int(),
 });

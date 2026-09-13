@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app/server.js",
     "dev": "tsc -p tsconfig.json && node dist/app/server.js",
-    "test": "echo \"api covered by smoke tests (see docs/testing)\""
+    "test": "vitest run src"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.1",
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@types/archiver": "^6.0.2",
     "@types/node": "^22.7.5",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^5.0.0"
   }
 }

@@ -24,8 +24,12 @@ function loadConfig(): Config {
   fs.mkdirSync(backupDir, { recursive: true });
   const password = process.env.LT_PASSWORD;
   if (!password) throw new Error('缺少 LT_PASSWORD 环境变量（初始个人账号密码）');
+  const port = Number(process.env.LT_PORT ?? 8787);
+  const sessionTtlHours = Number(process.env.LT_SESSION_TTL_HOURS ?? 24 * 30);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('LT_PORT 必须是 1–65535 的整数');
+  if (!Number.isFinite(sessionTtlHours) || sessionTtlHours <= 0) throw new Error('LT_SESSION_TTL_HOURS 必须是正数');
   return {
-    port: Number(process.env.LT_PORT ?? 8787),
+    port,
     host: process.env.LT_HOST ?? '127.0.0.1',
     dataDir,
     backupDir,
@@ -33,7 +37,7 @@ function loadConfig(): Config {
     // scrypt hash created at startup; login compares with scrypt
     passwordHash: hashPassword(password),
     sessionSecret: process.env.LT_SESSION_SECRET ?? 'dev-insecure-secret-change-me',
-    sessionTtlHours: Number(process.env.LT_SESSION_TTL_HOURS ?? 24 * 30),
+    sessionTtlHours,
     version: '0.1.0',
   };
 }
@@ -74,6 +78,6 @@ export function openDb(config: Config): InstanceType<typeof DatabaseSync> {
 
 export const config = loadConfig();
 
-if (config.sessionSecret === 'dev-insecure-secret-change-me' || process.env.LT_PASSWORD_SALT === 'learntrack-static-salt') {
+if (config.sessionSecret === 'dev-insecure-secret-change-me' || (process.env.LT_PASSWORD_SALT ?? 'learntrack-static-salt') === 'learntrack-static-salt') {
   console.warn('[LearnTrack] 警告：正在使用默认 LT_SESSION_SECRET / LT_PASSWORD_SALT，仅限本地开发，公网部署前必须更换。');
 }

@@ -70,6 +70,23 @@ export const ACTIVITY_SEEDS: Record<string, string[]> = {
   'algorithm.leetcode': ['刷题', '复盘'],
 };
 
+/** Deterministic UUID-shaped id derived from a built-in seed key. */
+export function stableSeedId(seedKey: string): string {
+  const bytes = new TextEncoder().encode(`learntrack:${seedKey}`);
+  const hashes = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
+  for (const byte of bytes) {
+    for (let i = 0; i < hashes.length; i += 1) {
+      hashes[i] = Math.imul((hashes[i]! ^ byte) >>> 0, (0x01000193 + i * 2) >>> 0) >>> 0;
+      hashes[i] = (hashes[i]! ^ (hashes[i]! >>> 13)) >>> 0;
+    }
+  }
+  const chars = hashes.map((h) => h.toString(16).padStart(8, '0')).join('').split('');
+  chars[12] = '5';
+  chars[16] = ((Number.parseInt(chars[16]!, 16) & 0x3) | 0x8).toString(16);
+  const hex = chars.join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export interface FlattenedSeed {
   major: { seedKey: string; name: string; color: string };
   subject: { seedKey: string; name: string; color: string } | null;

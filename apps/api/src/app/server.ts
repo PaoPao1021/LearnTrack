@@ -145,7 +145,8 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
   // ---- sync pull: incremental ops and tombstones after cursor
   app.get('/api/v1/sync/pull', async (request, reply) => {
     const q = request.query as { cursor?: string };
-    const cursor = Math.max(0, Number(q.cursor ?? 0) || 0);
+    const requestedCursor = Number(q.cursor ?? 0);
+    const cursor = Number.isSafeInteger(requestedCursor) && requestedCursor >= 0 ? requestedCursor : 0;
     const rows = db.prepare(
       'SELECT seq, op_id, device_id, entity, entity_id, base_version, payload, op_group_id, client_timestamp, server_timestamp FROM sync_ops WHERE seq > ? ORDER BY seq LIMIT 2000',
     ).all(cursor) as Record<string, unknown>[];

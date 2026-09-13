@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
 import { enqueueOp } from '../../services/queue';
+import { ensureDeviceId } from '../../db/seed';
+import { nowIso } from '../../utils';
 import { AlertTriangle } from 'lucide-react';
 
 
@@ -14,6 +16,7 @@ const TABLES = {
   todo: () => db.todos,
   goal: () => db.goals,
   quickAction: () => db.quickActions,
+  settings: () => db.settings,
 } as const;
 
 /**
@@ -31,16 +34,28 @@ export function ConflictSection() {
     const row = await db.conflicts.get(id);
     if (!row) return;
     setBusy(String(id));
-    const payload = (pick === 'local' ? row.localPayload : row.serverPayload) as Record<string, unknown> | null;
-    if (payload) {
-      const table = TABLES[row.entity as keyof typeof TABLES]?.();
-      if (table) await table.put(payload as never);
-      // 保留我的版本时，带上服务端版本号重新入队，避免再次冲突
-      if (pick === 'local') {
-        await enqueueOp(row.entity, row.entityId, payload, row.serverVersion);
-      }
+    const table = TABLES[row.entity as keyof typeof TABLES]?.();
+    if (!table) {
+      setBusy(null);
+      return;
     }
-    await db.conflicts.delete(id);
+    const selected = (pick === 'local' ? row.localPayload : row.serverPayload) as Record<string, unknown> | null;
+    const payload = pick === 'local' && selected && typeof selected.version === 'number'
+      ? { ...selected, version: row.serverVersion + 1, updatedAt: nowIso() }
+      : selected;
+    const deviceId = await ensureDeviceId();
+    await db.transaction('rw', [table, db.conflicts, db.pendingOps], async () => {
+      if (payload) {
+        await table.put(payload as never);
+      } else {
+        await table.delete(row.entityId as never);
+      }
+      // 保留本机候选时，以服务端当前版本为基线重新入队；删除候选也必须同步。
+      if (pick === 'local') {
+        await enqueueOp(row.entity, row.entityId, payload, row.serverVersion, null, deviceId);
+      }
+      await db.conflicts.delete(id);
+    });
     setBusy(null);
   };
 

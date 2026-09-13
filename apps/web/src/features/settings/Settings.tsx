@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
 import { useTheme } from './useTheme';
+import { Segmented } from '../../components/common/Segmented';
 import { addCategory, archiveCategory, renameCategory } from '../../services/commands';
 import { exportFullBackup, restoreBackup, inspectBackup, exportCsv, downloadBlob, type RestoreSummary } from '../../services/backup';
 import { login, logout, readSyncState, setServerUrl, syncNow, healthCheck, getServerUrl, checkSession } from '../../services/sync';
@@ -13,12 +14,17 @@ function ThemeSection() {
   return (
     <div className="card p-4">
       <h2 className="display mb-3 text-xl">外观</h2>
-      <div className="mb-3 flex flex-wrap gap-2">
-        {(['light', 'dark', 'system'] as const).map((t) => (
-          <button key={t} className={theme === t ? 'btn-primary' : 'btn-ghost'} onClick={() => setTheme(t)}>
-            {{ light: '浅色', dark: '深色', system: '跟随系统' }[t]}
-          </button>
-        ))}
+      <div className="mb-3">
+        <Segmented
+          ariaLabel="外观主题"
+          value={theme as 'light' | 'dark' | 'system'}
+          onChange={setTheme}
+          options={[
+            { value: 'light', label: '浅色' },
+            { value: 'dark', label: '深色' },
+            { value: 'system', label: '跟随系统' },
+          ] as const}
+        />
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-slate-500 dark:text-slate-400">主题色</span>
@@ -86,8 +92,10 @@ function CategorySection() {
         已有记录的分类只能归档、不能删除，历史统计不会丢失；改名不影响历史记录。
       </p>
       <form className="mb-3 flex flex-wrap gap-2" onSubmit={add}>
-        <input className="input max-w-48" placeholder="新分类名称" value={newName} onChange={(e) => setNewName(e.target.value)} />
-        <select className="input max-w-52" value={parentOf} onChange={(e) => setParentOf(e.target.value)}>
+        <label className="sr-only" htmlFor="category-name">新分类名称</label>
+        <input id="category-name" className="input max-w-48" placeholder="新分类名称" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <label className="sr-only" htmlFor="category-parent">新分类的层级与父级</label>
+        <select id="category-parent" className="input max-w-52" value={parentOf} onChange={(e) => setParentOf(e.target.value)}>
           <option value="">作为新的大科目</option>
           <optgroup label="大科目下（具体科目）">
             {majors.map((m) => <option key={m.id} value={`major:${m.id}`}>{m.name}</option>)}
@@ -134,9 +142,9 @@ function SyncSection() {
     <div className="card p-4">
       <h2 className="display mb-3 text-xl">同步与账号</h2>
       <div className="mb-3">
-        <label className="label">同步服务器地址（本机或 ECS，可选）</label>
+        <label className="label" htmlFor="sync-server">同步服务器地址（本机或 ECS，可选）</label>
         <div className="flex gap-2">
-          <input className="input" placeholder="https://your-domain.example" value={server} onChange={(e) => setServer(e.target.value)} />
+          <input id="sync-server" className="input" placeholder="https://your-domain.example" value={server} onChange={(e) => setServer(e.target.value)} />
           <button className="btn-ghost" onClick={async () => { await setServerUrl(server); setMessage('已保存服务器地址'); void refresh(); }}>保存</button>
         </div>
       </div>
@@ -156,8 +164,10 @@ function SyncSection() {
           }
           void refresh();
         }}>
-          <input className="input max-w-40" placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input className="input max-w-40" type="password" placeholder="密码" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <label className="sr-only" htmlFor="sync-username">用户名</label>
+          <input id="sync-username" className="input max-w-40" placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <label className="sr-only" htmlFor="sync-password">密码</label>
+          <input id="sync-password" className="input max-w-40" type="password" placeholder="密码" value={password} onChange={(e) => setPassword(e.target.value)} />
           <button className="btn-primary" type="submit">登录</button>
         </form>
       )}
@@ -167,7 +177,7 @@ function SyncSection() {
         <li>最近拉取：{state?.lastPullAt ? new Date(state.lastPullAt).toLocaleString('zh-CN') : '—'}</li>
         {state?.lastError && <li className="text-red-500">最近错误：{state.lastError}</li>}
       </ul>
-      {message && <p className="mt-2 text-sm">{message}</p>}
+      {message && <p role="status" className="mt-2 text-sm">{message}</p>}
       <p className="mt-2 text-xs text-slate-400">
         没有服务器也能一直使用：数据保存在本机浏览器，可随时导出完整备份。
       </p>
@@ -179,18 +189,12 @@ function BackupSection() {
   const [summary, setSummary] = useState<{ text: string; info: RestoreSummary } | null>(null);
   const [message, setMessage] = useState('');
 
-  const onPick = async (file: File, mode: 'inspect' | 'restore') => {
+  const onPick = async (file: File) => {
     const text = await file.text();
     try {
-      if (mode === 'inspect') {
-        const info = await inspectBackup(text);
-        setSummary({ text, info });
-        setMessage('校验通过，请确认摘要后点击恢复。');
-      } else {
-        await restoreBackup(text);
-        setMessage('恢复完成，页面数据已刷新。');
-        setSummary(null);
-      }
+      const info = await inspectBackup(text);
+      setSummary({ text, info });
+      setMessage('校验通过，请确认摘要后点击恢复。');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
       setSummary(null);
@@ -210,11 +214,11 @@ function BackupSection() {
         }}>导出 CSV 时间明细</button>
         <label className="btn-ghost cursor-pointer">
           选择备份文件校验
-          <input type="file" accept="application/json" className="hidden" onChange={(e) => e.target.files?.[0] && void onPick(e.target.files[0], 'inspect')} />
+          <input type="file" accept="application/json" className="hidden" onChange={(e) => e.target.files?.[0] && void onPick(e.target.files[0])} />
         </label>
         <label className="btn-ghost cursor-pointer">
           从备份恢复
-          <input type="file" accept="application/json" className="hidden" onChange={(e) => e.target.files?.[0] && void onPick(e.target.files[0], 'restore')} />
+          <input type="file" accept="application/json" className="hidden" onChange={(e) => e.target.files?.[0] && void onPick(e.target.files[0])} />
         </label>
       </div>
       {summary && (
@@ -229,7 +233,7 @@ function BackupSection() {
           }}>确认恢复（覆盖当前数据）</button>
         </div>
       )}
-      {message && <p className="text-sm">{message}</p>}
+      {message && <p role="status" className="text-sm">{message}</p>}
       <p className="mt-2 text-xs text-slate-400">
         完整备份包含未同步修改；CSV 仅用于分析，不作为恢复格式。服务器端每日备份与电脑自动拉取见部署文档。
       </p>
@@ -246,7 +250,7 @@ function ServerStatus() {
       setHealth(h.ok ? `服务正常（v${h.version ?? '?'}）${loggedIn ? '，已登录' : '，未登录'}` : '同步服务不可达（离线模式）');
     })();
   }, []);
-  return <p className="text-xs text-slate-400">{health}</p>;
+  return <p role="status" className="text-xs text-slate-400">{health}</p>;
 }
 
 export default function Settings() {

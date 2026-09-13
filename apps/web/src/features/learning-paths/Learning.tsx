@@ -2,6 +2,8 @@ import { FormEvent, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
+import { Modal } from '../../components/common/Modal';
+import { Segmented } from '../../components/common/Segmented';
 import { addPathItems, addQuantity, addTodo, createPath, deletePath, deleteTodo, setItemDone, toggleTodo, setGoal } from '../../services/commands';
 import { chapterProgress, quantityProgress, formatDuration } from '@learntrack/domain';
 import { todayKey } from '../../utils';
@@ -25,6 +27,11 @@ function CreatePathForm({ onClose }: { onClose: () => void }) {
     setError('');
     if (!name.trim()) return setError('请填写路线名称');
     if (!subjectId) return setError('请选择所属具体科目');
+    if (mode === 'quantity') {
+      if (!Number.isInteger(total) || total < 1) return setError('总量必须是大于 0 的整数');
+      if (!Number.isInteger(initial) || initial < 0) return setError('已完成数量必须是非负整数');
+      if (initial > total && !confirm('已完成数量将超过总量，确认保留？')) return;
+    }
     const path = await createPath({
       subjectId, name: name.trim(), mode,
       totalQuantity: mode === 'quantity' ? Math.max(1, total) : null,
@@ -39,46 +46,53 @@ function CreatePathForm({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <form className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl p-5 card" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2 className="mb-4 text-lg font-semibold">新建学习路线</h2>
+    <Modal labelledBy="create-path-title" onClose={onClose} panelClassName="modal-panel glass-emphasis max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl p-5">
+      <form onSubmit={submit}>
+        <h2 id="create-path-title" className="mb-4 text-lg font-semibold">新建学习路线</h2>
         <div className="mb-3">
-          <label className="label">路线名称</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：高数基础课程 / 1000 题" />
+          <label className="label" htmlFor="path-name">路线名称</label>
+          <input id="path-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：高数基础课程 / 1000 题" />
         </div>
         <div className="mb-3">
-          <label className="label">所属具体科目</label>
-          <select className="input" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+          <label className="label" htmlFor="path-subject">所属具体科目</label>
+          <select id="path-subject" className="input" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
             <option value="">请选择</option>
             {subjects.map((s) => (
               <option key={s.id} value={s.id}>{majors.get(s.parentId ?? '')?.name} / {s.name}</option>
             ))}
           </select>
         </div>
-        <div className="mb-3 flex gap-2">
-          <button type="button" className={mode === 'chapters' ? 'btn-primary' : 'btn-ghost'} onClick={() => setMode('chapters')}>章节清单</button>
-          <button type="button" className={mode === 'quantity' ? 'btn-primary' : 'btn-ghost'} onClick={() => setMode('quantity')}>数量目标</button>
+        <div className="mb-3">
+          <Segmented
+            ariaLabel="路线模式"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'chapters', label: '章节清单' },
+              { value: 'quantity', label: '数量目标' },
+            ] as const}
+          />
         </div>
         {mode === 'quantity' ? (
           <div className="mb-3 grid grid-cols-3 gap-2">
-            <div><label className="label">总量</label><input type="number" min={1} className="input" value={total} onChange={(e) => setTotal(Number(e.target.value))} /></div>
-            <div><label className="label">单位</label><input className="input" value={unit} onChange={(e) => setUnit(e.target.value)} /></div>
-            <div><label className="label">已完成</label><input type="number" min={0} className="input" value={initial} onChange={(e) => setInitial(Number(e.target.value))} /></div>
+            <div><label className="label" htmlFor="path-total">总量</label><input id="path-total" type="number" min={1} className="input" value={total} onChange={(e) => setTotal(Number(e.target.value))} /></div>
+            <div><label className="label" htmlFor="path-unit">单位</label><input id="path-unit" className="input" value={unit} onChange={(e) => setUnit(e.target.value)} /></div>
+            <div><label className="label" htmlFor="path-initial">已完成</label><input id="path-initial" type="number" min={0} className="input" value={initial} onChange={(e) => setInitial(Number(e.target.value))} /></div>
           </div>
         ) : (
           <div className="mb-3">
-            <label className="label">章节清单（每行一项，可批量粘贴）</label>
-            <textarea className="input h-32" value={itemsText} onChange={(e) => setItemsText(e.target.value)} placeholder={'第1章 函数与极限\n第2章 导数与微分'} />
+            <label className="label" htmlFor="path-items">章节清单（每行一项，可批量粘贴）</label>
+            <textarea id="path-items" className="input h-32" value={itemsText} onChange={(e) => setItemsText(e.target.value)} placeholder={'第1章 函数与极限\n第2章 导数与微分'} />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">创建后可在路线中添加小节（最多两层）。</p>
           </div>
         )}
-        {error && <div className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
+        {error && <div role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose}>取消</button>
           <button type="submit" className="btn-primary">创建</button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }
 
@@ -101,7 +115,7 @@ function PathCard({ path }: { path: LearningPath }) {
             {' '}(完成 {Math.round(progress.ratio * 100)}%)
           </span>
         </div>
-        <button className="btn-danger px-2 py-1 text-xs" onClick={() => { if (confirm('删除该路线？统计时间不受影响。')) void deletePath(path.id); }}>删除</button>
+        <button className="btn-danger px-3 py-2 text-xs" onClick={() => { if (confirm('删除该路线？统计时间不受影响。')) void deletePath(path.id); }}>删除</button>
       </div>
       <div className="mb-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
         <div className="h-full rounded-full" style={{ width: `${progress.ratio * 100}%`, background: 'var(--accent)' }} />
@@ -109,10 +123,11 @@ function PathCard({ path }: { path: LearningPath }) {
       {path.mode === 'quantity' ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="w-28">
-            <input type="number" className="input" placeholder={`+${path.unit ?? ''}`} value={addDelta} onChange={(e) => setAddDelta(e.target.value === '' ? '' : Number(e.target.value))} />
+            <label className="sr-only" htmlFor={`path-delta-${path.id}`}>增加{path.unit ?? '数量'}（可负）</label>
+            <input id={`path-delta-${path.id}`} type="number" className="input" placeholder={`+${path.unit ?? ''}`} value={addDelta} onChange={(e) => setAddDelta(e.target.value === '' ? '' : Number(e.target.value))} />
           </div>
           <button className="btn-ghost" onClick={() => {
-            if (addDelta === '' || addDelta === 0) return;
+            if (addDelta === '' || addDelta === 0 || !Number.isInteger(addDelta)) return;
             const next = (path.completedQuantity ?? 0) + (addDelta as number);
             if (path.totalQuantity && next > path.totalQuantity && !confirm('完成量将超过总量，确认保留？')) return;
             void addQuantity(path.id, addDelta as number);
@@ -125,7 +140,7 @@ function PathCard({ path }: { path: LearningPath }) {
           <ul className="mb-3 max-h-64 space-y-1 overflow-y-auto">
             {(items ?? []).sort((a, b) => a.sortOrder - b.sortOrder).map((i) => (
               <li key={i.id} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={i.done} onChange={() => void setItemDone(i, !i.done)} />
+                <input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={i.done} onChange={() => void setItemDone(i, !i.done)} aria-label={`标记“${i.title}”${i.done ? '未完成' : '已完成'}`} />
                 <span className={i.done ? 'text-slate-400 line-through' : ''}>{i.title}</span>
                 {i.parentId && <span className="text-xs text-slate-400">小节</span>}
               </li>
@@ -133,7 +148,8 @@ function PathCard({ path }: { path: LearningPath }) {
             {(items ?? []).length === 0 && <li className="text-sm text-slate-500">还没有章节，添加后开始打卡。</li>}
           </ul>
           <div className="flex gap-2">
-            <input className="input" placeholder="添加章节，回车确认" value={addItem} onChange={(e) => setAddItem(e.target.value)}
+            <label className="sr-only" htmlFor={`path-add-item-${path.id}`}>添加章节</label>
+            <input id={`path-add-item-${path.id}`} className="input" placeholder="添加章节，回车确认" value={addItem} onChange={(e) => setAddItem(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && addItem.trim()) {
                   void addPathItems(path.id, [addItem.trim()]);
@@ -163,19 +179,22 @@ function TodoSection() {
         void addTodo({ title: title.trim(), subjectId: null, scheduledDate: date, dueDate: due || null });
         setTitle(''); setDue('');
       }}>
-        <input className="input" placeholder="待办内容" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <input type="date" className="input sm:w-36" value={date} onChange={(e) => setDate(e.target.value)} />
-        <input type="date" className="input sm:w-36" value={due} onChange={(e) => setDue(e.target.value)} aria-label="截止日期（可选）" />
+        <label className="sr-only" htmlFor="todo-title">待办内容</label>
+        <input id="todo-title" className="input" placeholder="待办内容" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <label className="sr-only" htmlFor="todo-date">计划日期</label>
+        <input id="todo-date" type="date" className="input sm:w-36" value={date} onChange={(e) => setDate(e.target.value)} />
+        <label className="sr-only" htmlFor="todo-due">截止日期（可选）</label>
+        <input id="todo-due" type="date" className="input sm:w-36" value={due} onChange={(e) => setDue(e.target.value)} />
         <button className="btn-primary" type="submit">添加</button>
       </form>
       <ul className="space-y-1 text-sm">
         {sorted.map((t) => (
           <li key={t.id} className="flex items-center gap-2">
-            <input type="checkbox" checked={t.done} onChange={() => void toggleTodo(t)} />
+            <input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={t.done} onChange={() => void toggleTodo(t)} aria-label={t.done ? `标记“${t.title}”未完成` : `完成“${t.title}”`} />
             <span className={t.done ? 'flex-1 text-slate-400 line-through' : 'flex-1'}>{t.title}</span>
             {t.scheduledDate && <span className="text-xs text-slate-400">{t.scheduledDate}</span>}
             {t.dueDate && <span className={`text-xs ${!t.done && t.dueDate < todayKey() ? 'font-semibold text-red-600' : 'text-slate-400'}`}>截止 {t.dueDate}</span>}
-            <button className="text-xs text-slate-400 hover:text-red-500" onClick={() => void deleteTodo(t.id)}>删除</button>
+            <button className="btn-ghost min-h-9 px-3 py-1.5 text-xs" onClick={() => void deleteTodo(t.id)}>删除</button>
           </li>
         ))}
         {sorted.length === 0 && <li className="text-slate-500 dark:text-slate-400">没有待办。</li>}
@@ -189,27 +208,28 @@ function GoalSection() {
   const [dailyHours, setDailyHours] = useState(4);
   const [weeklyHours, setWeeklyHours] = useState(25);
   const fmt = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)} 小时${s % 3600 ? ` ${Math.round((s % 3600) / 60)} 分` : ''}` : `${Math.round(s / 60)} 分钟`);
+  const validHours = (value: number) => Number.isFinite(value) && value >= 0;
 
   return (
     <div className="card p-4">
       <h2 className="display mb-3 text-xl">时长目标</h2>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <div className="w-24">
-          <label className="label">每日（小时）</label>
-          <input type="number" min={0} step={0.5} className="input" value={dailyHours} onChange={(e) => setDailyHours(Number(e.target.value))} />
+          <label className="label" htmlFor="goal-daily">每日（小时）</label>
+          <input id="goal-daily" type="number" min={0} step={0.5} className="input" value={dailyHours} onChange={(e) => setDailyHours(Number(e.target.value))} />
         </div>
-        <button className="btn-ghost" onClick={() => void setGoal({ scope: 'all', subjectId: null, period: 'daily', targetSeconds: Math.round(dailyHours * 3600) })}>设置每日目标</button>
+        <button className="btn-ghost" disabled={!validHours(dailyHours)} onClick={() => void setGoal({ scope: 'all', subjectId: null, period: 'daily', targetSeconds: Math.round(dailyHours * 3600) })}>设置每日目标</button>
         <div className="w-24">
-          <label className="label">每周（小时）</label>
-          <input type="number" min={0} step={0.5} className="input" value={weeklyHours} onChange={(e) => setWeeklyHours(Number(e.target.value))} />
+          <label className="label" htmlFor="goal-weekly">每周（小时）</label>
+          <input id="goal-weekly" type="number" min={0} step={0.5} className="input" value={weeklyHours} onChange={(e) => setWeeklyHours(Number(e.target.value))} />
         </div>
-        <button className="btn-ghost" onClick={() => void setGoal({ scope: 'all', subjectId: null, period: 'weekly', targetSeconds: Math.round(weeklyHours * 3600) })}>设置每周目标</button>
+        <button className="btn-ghost" disabled={!validHours(weeklyHours)} onClick={() => void setGoal({ scope: 'all', subjectId: null, period: 'weekly', targetSeconds: Math.round(weeklyHours * 3600) })}>设置每周目标</button>
       </div>
       <ul className="space-y-1 text-sm">
         {(goals ?? []).map((g) => (
           <li key={g.id} className="flex items-center justify-between rounded bg-slate-50 px-3 py-1.5 dark:bg-slate-800/60">
             <span>{g.period === 'daily' ? '每日' : '每周'}目标 · {fmt(g.targetSeconds)}</span>
-            <button className="text-xs text-slate-400 hover:text-red-500" onClick={() => void setGoal({ scope: g.scope, subjectId: g.subjectId, period: g.period, targetSeconds: 0 })}>移除</button>
+            <button className="btn-ghost min-h-9 px-3 py-1.5 text-xs" onClick={() => void setGoal({ scope: g.scope, subjectId: g.subjectId, period: g.period, targetSeconds: 0 })}>移除</button>
           </li>
         ))}
         {(goals ?? []).length === 0 && <li className="text-slate-500 dark:text-slate-400">未设置目标（可选）。所有来源的正式记录都会计入目标。</li>}

@@ -26,7 +26,7 @@ function TimerCard() {
 
   if (timer.status === 'idle') {
     return (
-      <section className="card rise p-6 md:p-8">
+      <section className="card card-hero rise p-6 md:p-8">
         <div className="mb-5 flex items-end justify-between">
           <div>
             <div className="label">Focus Session</div>
@@ -45,15 +45,15 @@ function TimerCard() {
           </div>
           <div className="w-32">
             <input
-              type="number" min={1} placeholder="倒计时(分)" className="input h-full"
+              type="number" min={1} placeholder="倒计时(分)" className="input h-full" aria-label="倒计时分钟数（可选）"
               value={countdownMin}
               onChange={(e) => setCountdownMin(e.target.value === '' ? '' : Number(e.target.value))}
             />
           </div>
           <button
             className="btn-primary"
-            disabled={!pickActivity}
-            onClick={() => timer.start(pickActivity, '', countdownMin === '' ? null : (countdownMin as number) * 60)}
+            disabled={!pickActivity || (countdownMin !== '' && (!Number.isFinite(countdownMin) || countdownMin <= 0))}
+            onClick={() => timer.start(pickActivity, '', countdownMin === '' ? null : Math.round((countdownMin as number) * 60))}
           >
             <Play size={15} /> 开始
           </button>
@@ -66,19 +66,24 @@ function TimerCard() {
   }
 
   return (
-    <section className="card rise p-6 md:p-8">
+    <section className="card card-hero rise p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="tick-text font-semibold" style={{ color: 'var(--accent)', fontSize: '3rem', lineHeight: 1 }}>
             {formatClock(elapsed)}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs opacity-70">
-            <span className={`mono ${timer.status === 'running' ? 'pulse-ring rounded-full px-2 py-0.5' : 'rounded-full px-2 py-0.5'}`} style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' }}>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+            <span
+              className="glass-light mono rounded-full px-2.5 py-1"
+              style={timer.status === 'paused'
+                ? { background: 'color-mix(in srgb, var(--warning) 14%, var(--surface-elevated))', color: 'var(--warning)' }
+                : { background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-elevated))', color: 'var(--accent)' }}
+            >
               {timer.status === 'paused' ? 'PAUSED' : 'RUNNING'}
             </span>
             {timer.countdownTargetSeconds ? <span className="tick-text">目标 {formatClock(timer.countdownTargetSeconds)}</span> : null}
-            {overtime > 0 && <span className="tick-text font-semibold text-amber-500">超时 {formatClock(overtime)}</span>}
-            {elapsed > 12 * 3600 && <span className="mono font-semibold text-red-500">超过 12 小时 · 请核对</span>}
+            {overtime > 0 && <span className="tick-text font-semibold" style={{ color: 'var(--warning)' }}>超时 {formatClock(overtime)}</span>}
+            {elapsed > 12 * 3600 && <span className="mono font-semibold" style={{ color: 'var(--danger)' }}>超过 12 小时 · 请核对</span>}
           </div>
         </div>
         <div className="flex gap-2">
@@ -105,12 +110,12 @@ function QuickActions({ onOpenEntry }: { onOpenEntry: (activityId: string) => vo
 
   return (
     <section className="card rise rise-1 p-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="label">Quick Capture</div>
           <h2 className="display text-xl">快捷记录</h2>
         </div>
-        <div className="w-56">
+        <div className="w-full sm:w-56">
           <ActivityCombobox
             value=""
             placeholder="搜索并添加快捷项…"
@@ -134,13 +139,14 @@ function QuickActions({ onOpenEntry }: { onOpenEntry: (activityId: string) => vo
               >
                 <span className="inline-block h-2 w-2 rounded-full" style={{ background: activity?.color ?? '#999' }} />
                 <span className="truncate">{qa.label}</span>
-                <ChevronRight size={14} className="ml-auto opacity-0 transition-opacity group-hover:opacity-60" />
+                <ChevronRight size={14} className="ml-auto shrink-0 opacity-30 transition-opacity group-hover:opacity-70" />
               </button>
+              {/* 移除按钮常显：不依赖 hover，键盘与触屏均可发现；焦点时加强对比 */}
               <button
-                className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full border text-[var(--ink)] opacity-80 transition-transform hover:rotate-90 hairline group-hover:flex"
-                style={{ background: 'var(--paper)' }}
+                className="absolute -right-1.5 -top-1.5 flex h-7 w-7 items-center justify-center rounded-full border opacity-70 transition-transform hover:rotate-90 focus-visible:opacity-100 hairline"
+                style={{ background: 'var(--surface-elevated)' }}
                 onClick={() => void removeQuickAction(qa.id)}
-                aria-label="移除快捷项"
+                aria-label={`移除快捷项 ${qa.label}`}
               >
                 <Plus size={11} className="rotate-45" />
               </button>
@@ -160,9 +166,10 @@ function QuickActions({ onOpenEntry }: { onOpenEntry: (activityId: string) => vo
 function TodayTodos() {
   const todos = useLiveQuery(() => db.todos.filter((t) => !t.deletedAt).toArray(), [], []);
   const today = todayKey();
-  const todays = (todos ?? []).filter((t) => !t.done && t.scheduledDate && t.scheduledDate <= today);
-  const doneToday = (todos ?? []).filter((t) => t.done && t.scheduledDate === today);
   const overdue = (todos ?? []).filter((t) => !t.done && t.dueDate && t.dueDate < today);
+  const overdueIds = new Set(overdue.map((t) => t.id));
+  const todays = (todos ?? []).filter((t) => !t.done && t.scheduledDate && t.scheduledDate <= today && !overdueIds.has(t.id));
+  const doneToday = (todos ?? []).filter((t) => t.done && t.scheduledDate === today);
 
   return (
     <section className="card rise rise-2 p-6">
@@ -187,7 +194,7 @@ function TodayTodos() {
               checked={false}
               onChange={() => void toggleTodo(t)}
               aria-label={`完成 ${t.title}`}
-              className="h-4 w-4 accent-[var(--accent)]"
+              className="h-5 w-5 accent-[var(--accent)]"
             />
             <span className={t.dueDate && t.dueDate < today ? 'text-red-500' : ''}>{t.title}</span>
             {t.dueDate && <span className="tick-text ml-auto text-[10px] opacity-40">{t.dueDate}</span>}
@@ -195,7 +202,7 @@ function TodayTodos() {
         ))}
         {doneToday.map((t) => (
           <li key={t.id} className="flex items-center gap-2.5 text-sm opacity-40 line-through">
-            <input type="checkbox" checked readOnly className="h-4 w-4 accent-[var(--accent)]" />
+            <input type="checkbox" checked readOnly aria-label={`${t.title}（已完成）`} className="h-5 w-5 accent-[var(--accent)]" />
             {t.title}
           </li>
         ))}
@@ -206,6 +213,18 @@ function TodayTodos() {
 
 function GoalsProgress({ todaySeconds, weekSeconds }: { todaySeconds: number; weekSeconds: number }) {
   const goals = useLiveQuery(() => db.goals.filter((g) => !g.deletedAt && g.active).toArray(), [], []);
+  const entries = useLiveQuery(() => db.entries.filter((e) => !e.deletedAt).toArray(), [], []);
+  const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
+  const today = todayKey();
+  const weekStart = mondayOf(today);
+  const byId = new Map((categories ?? []).map((c) => [c.id, c]));
+  const actualFor = (subjectId: string, period: 'daily' | 'weekly') => {
+    const matching = (entries ?? []).filter((entry) => {
+      const activity = byId.get(entry.activityId);
+      return activity?.parentId === subjectId;
+    });
+    return computeStats(matching, [], period === 'daily' ? today : weekStart, today, { timeZone: TZ }).totalSeconds;
+  };
   if ((goals ?? []).length === 0) return null;
   return (
     <section className="card rise rise-3 p-6">
@@ -218,7 +237,9 @@ function GoalsProgress({ todaySeconds, weekSeconds }: { todaySeconds: number; we
       </div>
       <div className="space-y-4">
         {(goals ?? []).map((g) => {
-          const actual = g.period === 'daily' ? todaySeconds : weekSeconds;
+          const actual = g.scope === 'subject' && g.subjectId
+            ? actualFor(g.subjectId, g.period)
+            : g.period === 'daily' ? todaySeconds : weekSeconds;
           const c = goalCompletion(actual, g.targetSeconds);
           const label = g.period === 'daily' ? '每日' : '每周';
           return (

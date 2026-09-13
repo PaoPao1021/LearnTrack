@@ -1,4 +1,4 @@
-import { CATEGORY_SEEDS, ACTIVITY_SEEDS } from '@learntrack/domain';
+import { CATEGORY_SEEDS, ACTIVITY_SEEDS, stableSeedId } from '@learntrack/domain';
 import { db, SETTINGS_KEYS, getSetting, setSetting } from './database';
 import type { Category } from '@learntrack/domain';
 
@@ -17,7 +17,6 @@ function nowIso(): string {
 export async function ensureSeeded(): Promise<void> {
   const existing = await db.categories.toArray();
   const bySeed = new Map(existing.filter((c) => c.seedKey).map((c) => [c.seedKey as string, c]));
-  let created: Category[] = [];
   let sortOrder = existing.filter((c) => c.level === 'major').length;
 
   await db.transaction('rw', db.categories, db.quickActions, async () => {
@@ -25,35 +24,32 @@ export async function ensureSeeded(): Promise<void> {
       let majorRow = bySeed.get(major.seedKey);
       if (!majorRow) {
         majorRow = {
-          id: uuid(), level: 'major', parentId: null, name: major.name, color: major.color,
+          id: stableSeedId(major.seedKey), level: 'major', parentId: null, name: major.name, color: major.color,
           seedKey: major.seedKey, archived: false, sortOrder: sortOrder++,
           createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
         };
         await db.categories.add(majorRow);
-        created.push(majorRow);
       }
       for (const [si, subject] of (major.children ?? []).entries()) {
         let subjectRow = bySeed.get(subject.seedKey);
         if (!subjectRow) {
           subjectRow = {
-            id: uuid(), level: 'subject', parentId: majorRow.id, name: subject.name, color: subject.color,
+            id: stableSeedId(subject.seedKey), level: 'subject', parentId: majorRow.id, name: subject.name, color: subject.color,
             seedKey: subject.seedKey, archived: false, sortOrder: si,
             createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
           };
           await db.categories.add(subjectRow);
-          created.push(subjectRow);
         }
         const acts = ACTIVITY_SEEDS[subject.seedKey] ?? [];
         for (const [ai, activity] of acts.entries()) {
           const key = `${subject.seedKey}.${activity}`;
           if (bySeed.has(key)) continue;
           const row: Category = {
-            id: uuid(), level: 'activity', parentId: subjectRow!.id, name: activity, color: subject.color,
+            id: stableSeedId(key), level: 'activity', parentId: subjectRow!.id, name: activity, color: subject.color,
             seedKey: key, archived: false, sortOrder: ai,
             createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
           };
           await db.categories.add(row);
-          created.push(row);
         }
       }
     }
@@ -74,14 +70,13 @@ export async function ensureSeeded(): Promise<void> {
         picks.map((a, i) => {
           const subject = a.parentId ? byId.get(a.parentId) : undefined;
           return {
-            id: uuid(), activityId: a.id,
+            id: stableSeedId(`quick-action:${a.seedKey ?? a.id}`), activityId: a.id,
             label: subject ? `${subject.name}·${a.name}` : a.name,
-            pinned: true, sortOrder: i, hidden: false,
+            pinned: true, sortOrder: i, hidden: false, version: 1,
           };
         }),
       );
     }
-    created = created;
   });
   await setSetting('categoriesSeeded', true);
 }

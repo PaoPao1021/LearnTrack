@@ -7,31 +7,31 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "echo \"web covered by domain package + manual browser checks\""
+    "test": "vitest run src"
   },
   "dependencies": {
-    "@fontsource-variable/space-grotesk": "^5.3.0",
-    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@learntrack/contracts": "*",
     "@learntrack/domain": "*",
     "dexie": "^4.0.8",
     "dexie-react-hooks": "^1.1.7",
-    "echarts": "^5.5.1",
+    "echarts": "^6.1.0",
     "lucide-react": "^1.45.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.27.0",
+    "react-router-dom": "^7.18.3",
     "zod": "^3.23.8",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.2",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.20",
+    "fake-indexeddb": "^6.2.5",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3",
-    "vite": "^5.4.8"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   }
 }

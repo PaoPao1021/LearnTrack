@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
 import EntryModal from '../../components/common/EntryModal';
-import { deleteEntry, updateEntry } from '../../services/commands';
+import { Modal } from '../../components/common/Modal';
+import { updateEntry } from '../../services/commands';
 import { formatDuration, localDateKey } from '@learntrack/domain';
 import { todayKey, TZ } from '../../utils';
 import type { Category, EntryRecord } from '@learntrack/domain';
@@ -43,8 +45,8 @@ function EntryRow({ entry, activity, subject, major, onEdit }: {
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <span className="font-semibold">{formatDuration(entry.durationSeconds)}</span>
-        <button className="btn-ghost px-2 py-1 text-xs" onClick={onEdit}>编辑</button>
-        <button className="btn-danger px-2 py-1 text-xs" onClick={() => setConfirmDelete(true)}>删除</button>
+        <button className="btn-ghost px-3 py-2 text-xs" onClick={onEdit}>编辑</button>
+        <button className="btn-danger px-3 py-2 text-xs" onClick={() => setConfirmDelete(true)}>删除</button>
       </div>
       {confirmDelete && (
         <DeleteEntryDialog
@@ -57,12 +59,25 @@ function EntryRow({ entry, activity, subject, major, onEdit }: {
 }
 
 export default function Entries() {
+  // 筛选、搜索与页码保存在 URL：刷新、返回、分享链接都能还原上下文
+  const [searchParams, setSearchParams] = useSearchParams();
+  const search = searchParams.get('q') ?? '';
+  const filterActivity = searchParams.get('filter') ?? '';
+  const rawPage = Number(searchParams.get('page') ?? '0');
+  const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 0;
+  const PAGE = 14;
+
+  const updateParams = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value == null || value === '') next.delete(key);
+      else next.set(key, value);
+    }
+    setSearchParams(next);
+  };
+
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EntryRecord | null>(null);
-  const [filterActivity, setFilterActivity] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(0);
-  const PAGE = 14;
 
   const entries = useLiveQuery(() => db.entries.toArray(), [], [] as EntryRecord[]);
   const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
@@ -93,19 +108,21 @@ export default function Entries() {
         : a.learningDate < b.learningDate ? 1 : -1));
   }, [entries, filterActivity, search, byId]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  const current = Math.min(page, totalPages - 1);
+
   const grouped = useMemo(() => {
     const map = new Map<string, EntryRecord[]>();
-    for (const e of filtered.slice(page * PAGE, page * PAGE + PAGE)) {
+    for (const e of filtered.slice(current * PAGE, current * PAGE + PAGE)) {
       if (!map.has(e.learningDate)) map.set(e.learningDate, []);
       map.get(e.learningDate)!.push(e);
     }
     return [...map.entries()];
-  }, [filtered, page]);
+  }, [filtered, current]);
 
   const majors = (categories ?? []).filter((c) => c.level === 'major' && !c.deletedAt);
   const subjects = (categories ?? []).filter((c) => c.level === 'subject' && !c.deletedAt);
   const activities = (categories ?? []).filter((c) => c.level === 'activity' && !c.deletedAt);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
 
   return (
     <div className="space-y-4">
@@ -115,8 +132,8 @@ export default function Entries() {
       </div>
 
       <div className="card flex flex-wrap gap-2 p-3">
-        <input className="input max-w-48" placeholder="搜索备注/活动" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
-        <select className="input max-w-40" value={filterActivity} onChange={(e) => { setFilterActivity(e.target.value); setPage(0); }}>
+        <input className="input max-w-48" placeholder="搜索备注/活动" aria-label="搜索备注或活动" value={search} onChange={(e) => updateParams({ q: e.target.value, page: null })} />
+        <select className="input max-w-40" aria-label="按分类筛选" value={filterActivity} onChange={(e) => updateParams({ filter: e.target.value, page: null })}>
           <option value="">全部分类</option>
           <optgroup label="大科目">{majors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
           <optgroup label="具体科目">{subjects.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
@@ -154,11 +171,11 @@ export default function Entries() {
       ))}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3">
-          <button className="btn-ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>上一页</button>
-          <span className="text-sm text-slate-500">{page + 1} / {totalPages}</span>
-          <button className="btn-ghost" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>下一页</button>
-        </div>
+        <nav className="flex items-center justify-center gap-3" aria-label="记录分页">
+          <button className="btn-ghost" disabled={current === 0} onClick={() => updateParams({ page: String(current - 1) })}>上一页</button>
+          <span className="text-sm text-slate-500">{current + 1} / {totalPages}</span>
+          <button className="btn-ghost" disabled={current >= totalPages - 1} onClick={() => updateParams({ page: String(current + 1) })}>下一页</button>
+        </nav>
       )}
 
       <EntryModal open={addOpen} onClose={() => setAddOpen(false)} />
@@ -168,52 +185,62 @@ export default function Entries() {
 }
 
 function EditEntryModal({ entry, onClose }: { entry: EntryRecord | null; onClose: () => void }) {
-  const [minutes, setMinutes] = useState(0);
-  const [note, setNote] = useState('');
-  const [loadedId, setLoadedId] = useState<string | null>(null);
-
   if (!entry) return null;
-  if (loadedId !== entry.id) {
-    setLoadedId(entry.id);
-    setMinutes(Math.round(entry.durationSeconds / 60));
-    setNote(entry.note ?? '');
-  }
+  return <EditEntryForm key={entry.id} entry={entry} onClose={onClose} />;
+}
+
+function EditEntryForm({ entry, onClose }: { entry: EntryRecord; onClose: () => void }) {
+  const [date, setDate] = useState(entry.learningDate);
+  const [minutes, setMinutes] = useState(Math.round(entry.durationSeconds / 60));
+  const [note, setNote] = useState(entry.note ?? '');
+  const [error, setError] = useState('');
 
   const save = async () => {
-    await updateEntry(entry.id, {
-      durationSeconds: minutes * 60,
-      note: note || null,
-    });
-    onClose();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError('请选择有效日期');
+    if (!Number.isFinite(minutes) || minutes <= 0) return setError('时长必须大于 0');
+    const patch: Partial<EntryRecord> = { learningDate: date, durationSeconds: Math.round(minutes * 60), note: note || null };
+    if (entry.startedAt != null && entry.endedAt != null) {
+      const originalDay = Date.parse(`${entry.learningDate}T00:00:00Z`);
+      const nextDay = Date.parse(`${date}T00:00:00Z`);
+      const shift = nextDay - originalDay;
+      const shiftedStart = entry.startedAt + shift;
+      const shiftedPauses = (entry.pauseIntervals ?? []).map((p) => ({ startAt: p.startAt + shift, endAt: p.endAt + shift }));
+      const pausedMs = shiftedPauses.reduce((sum, p) => sum + Math.max(0, p.endAt - p.startAt), 0);
+      patch.startedAt = shiftedStart;
+      patch.endedAt = shiftedStart + Math.round(minutes * 60_000) + pausedMs;
+      patch.pauseIntervals = shiftedPauses;
+    }
+    try {
+      await updateEntry(entry.id, patch);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败，请重试');
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl p-5 card" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-4 text-lg font-semibold">编辑记录</h2>
-        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-          修改时长不会自动修改关联进度。删除该记录时可以选择是否撤销关联进度。
-        </p>
-        <div className="mb-3">
-          <label className="label">日期</label>
-          <input type="date" className="input" defaultValue={entry.learningDate} onChange={(e) => {
-            const date = e.target.value;
-            if (date) void updateEntry(entry.id, { learningDate: date });
-          }} />
-        </div>
-        <div className="mb-3">
-          <label className="label">时长（分钟）</label>
-          <input type="number" min={1} className="input" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
-        </div>
-        <div className="mb-4">
-          <label className="label">备注</label>
-          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-        <div className="flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose}>取消</button>
-          <button className="btn-primary" onClick={save}>保存</button>
-        </div>
+    <Modal labelledBy="edit-entry-title" onClose={onClose} panelClassName="modal-panel glass-emphasis w-full max-w-md rounded-2xl p-5">
+      <h2 id="edit-entry-title" className="mb-4 text-lg font-semibold">编辑记录</h2>
+      <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+        修改时长不会自动修改关联进度。删除该记录时可以选择是否撤销关联进度。
+      </p>
+      <div className="mb-3">
+        <label className="label" htmlFor="edit-date">日期</label>
+        <input id="edit-date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
-    </div>
+      <div className="mb-3">
+        <label className="label" htmlFor="edit-minutes">时长（分钟）</label>
+        <input id="edit-minutes" type="number" min={1} className="input" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+      </div>
+      <div className="mb-4">
+        <label className="label" htmlFor="edit-note">备注</label>
+        <input id="edit-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      {error && <div role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
+      <div className="flex justify-end gap-2">
+        <button className="btn-ghost" onClick={onClose}>取消</button>
+        <button className="btn-primary" onClick={save}>保存</button>
+      </div>
+    </Modal>
   );
 }

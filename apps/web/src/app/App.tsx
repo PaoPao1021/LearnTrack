@@ -1,10 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { lazy } from 'react';
 import Layout from '../components/layout/Layout';
 import Dashboard from '../features/dashboard/Dashboard';
-import Entries from '../features/entries/Entries';
-import Analytics from '../features/analytics/Analytics';
-import Learning from '../features/learning-paths/Learning';
-import Settings from '../features/settings/Settings';
+
+const Entries = lazy(() => import('../features/entries/Entries'));
+const Analytics = lazy(() => import('../features/analytics/Analytics'));
+const Learning = lazy(() => import('../features/learning-paths/Learning'));
+const Settings = lazy(() => import('../features/settings/Settings'));
 
 export default function App() {
   return (
