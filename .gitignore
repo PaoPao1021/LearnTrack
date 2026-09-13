@@ -20,3 +20,4 @@ var/
 .DS_Store
 *.log
 /tmp
+.zcode/

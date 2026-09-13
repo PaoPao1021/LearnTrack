@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
 import { useTheme } from './useTheme';
 import { Segmented } from '../../components/common/Segmented';
+import { Modal } from '../../components/common/Modal';
 import { useI18n, translateError } from '../../i18n';
 import { addCategory, archiveCategory, renameCategory } from '../../services/commands';
 import { exportFullBackup, restoreBackup, inspectBackup, exportCsv, downloadBlob, type RestoreSummary } from '../../services/backup';
@@ -28,18 +29,18 @@ function ThemeSection() {
           ] as const}
         />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="text-sm text-slate-500 dark:text-slate-400">{t('theme.accentLabel')}</span>
         {ACCENT_PRESETS.map((c) => (
           <button
             key={c}
-            className={`h-7 w-7 rounded-full ring-2 ring-offset-2 dark:ring-offset-slate-900 ${accent === c ? 'ring-slate-400' : 'ring-transparent'}`}
+            className={`h-8 w-8 rounded-full ring-2 ring-offset-2 transition-transform hover:scale-110 dark:ring-offset-slate-900 ${accent === c ? 'ring-slate-400' : 'ring-transparent'}`}
             style={{ background: c }}
             onClick={() => setAccent(c)}
             aria-label={t('theme.accentAria', { color: c })}
           />
         ))}
-        <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-7 w-10 cursor-pointer rounded" aria-label={t('theme.customAria')} />
+        <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-8 w-10 cursor-pointer rounded" aria-label={t('theme.customAria')} />
       </div>
       <p className="mt-2 text-xs text-slate-400">{t('theme.customHint')}</p>
     </div>
@@ -69,6 +70,7 @@ function CategorySection() {
   const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
   const [newName, setNewName] = useState('');
   const [parentOf, setParentOf] = useState('');
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const majors = (categories ?? []).filter((c) => c.level === 'major' && !c.deletedAt);
   const subjects = (categories ?? []).filter((c) => c.level === 'subject' && !c.deletedAt);
   const activities = (categories ?? []).filter((c) => c.level === 'activity' && !c.deletedAt);
@@ -95,10 +97,7 @@ function CategorySection() {
         {c.archived && <span className="text-xs">{t('cat.archived')}</span>}
       </span>
       <span className="flex gap-2">
-        <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => {
-          const name = prompt(t('cat.renamePrompt'), c.name);
-          if (name && name.trim()) void renameCategory(c.id, name.trim());
-        }}>{t('cat.rename')}</button>
+        <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => setRenaming({ id: c.id, name: c.name })}>{t('cat.rename')}</button>
         {!c.archived && (
           <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => void archiveCategory(c.id)}>{t('cat.archive')}</button>
         )}
@@ -140,7 +139,57 @@ function CategorySection() {
           </li>
         ))}
       </ul>
+      {renaming && (
+        <RenameCategoryDialog
+          initial={renaming.name}
+          onClose={() => setRenaming(null)}
+          onSubmit={async (name) => {
+            await renameCategory(renaming.id, name);
+            setRenaming(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function RenameCategoryDialog({ initial, onClose, onSubmit }: {
+  initial: string;
+  onClose: () => void;
+  onSubmit: (name: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [name, setName] = useState(initial);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onSubmit(name.trim());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal labelledBy="rename-category-title" onClose={onClose} panelClassName="modal-panel glass-emphasis w-full max-w-sm rounded-2xl p-5">
+      <h2 id="rename-category-title" className="mb-3 text-lg font-semibold">{t('cat.rename')}</h2>
+      <label className="label" htmlFor="rename-category-input">{t('cat.renamePrompt')}</label>
+      <input
+        id="rename-category-input"
+        className="input mb-4"
+        value={name}
+        maxLength={60}
+        autoFocus
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void submit(); } }}
+      />
+      <div className="flex justify-end gap-2">
+        <button className="btn-ghost" onClick={onClose} disabled={busy}>{t('common.cancel')}</button>
+        <button className="btn-primary" disabled={busy || !name.trim()} onClick={() => void submit()}>{t('common.save')}</button>
+      </div>
+    </Modal>
   );
 }
 

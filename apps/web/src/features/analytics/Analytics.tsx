@@ -304,7 +304,7 @@ export default function Analytics() {
     ).filter((d) => d.value > 0);
     const colorOf = (id: string) => byId.get(id)?.color;
     chart.setOption({
-      tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}：${formatDuration(p.value, lang)}（${p.percent}%）` },
+      tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${formatDuration(p.value, lang)} (${p.percent}%)` },
       legend: { bottom: 0, textStyle: { fontSize: 10, color: palette.label }, type: 'scroll' },
       series: [
         {

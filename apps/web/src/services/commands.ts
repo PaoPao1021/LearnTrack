@@ -352,9 +352,10 @@ export async function addQuickAction(activityId: string, label: string): Promise
   const deviceId = await ensureDeviceId();
   const duplicate = await db.quickActions.where('activityId').equals(activityId).filter((q) => !q.hidden).first();
   if (duplicate) return;
-  const count = await db.quickActions.count();
-  const qa: QuickAction = { id: uuid2(), activityId, label, pinned: true, sortOrder: count, hidden: false, version: 1 };
+  // 计数与写入同一事务：并发添加时 sortOrder 不会冲突
+  const qa: QuickAction = { id: uuid2(), activityId, label, pinned: true, sortOrder: -1, hidden: false, version: 1 };
   await db.transaction('rw', db.quickActions, db.pendingOps, async () => {
+    qa.sortOrder = await db.quickActions.count();
     await db.quickActions.add(qa);
     await enqueueOp('quickAction', qa.id, qa, null, null, deviceId);
   });

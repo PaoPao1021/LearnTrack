@@ -46,6 +46,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
   const [quantityDelta, setQuantityDelta] = useState<number | ''>('');
   const [overlapWarn, setOverlapWarn] = useState<{ count: number; rangeKey: string } | null>(null);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const paths = useLiveQuery(() => db.paths.filter((p) => !p.deletedAt).toArray(), [], []);
 
@@ -53,6 +54,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     setError('');
     if (!activityId) {
       setError(t('entry.errPickActivity'));
@@ -95,6 +97,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
       return;
     }
     if (overlapCount === 0) setOverlapWarn(null);
+    setSubmitting(true);
     try {
       await saveEntryWithProgress({
         activityId,
@@ -112,6 +115,8 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
       onClose();
     } catch (err) {
       setError(translateError(err, t));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -232,8 +237,8 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
         {error && <div role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
 
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-ghost" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="submit" className="btn-primary">{overlapWarn ? t('entry.confirmSave') : t('common.save')}</button>
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={submitting}>{t('common.cancel')}</button>
+          <button type="submit" className="btn-primary" disabled={submitting}>{overlapWarn ? t('entry.confirmSave') : t('common.save')}</button>
         </div>
         <div className="mt-2 text-right text-xs text-slate-400">{t('entry.approxHours', { hours: hoursFromSeconds(minutes * 60) })}</div>
       </form>
