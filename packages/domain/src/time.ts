@@ -136,10 +136,16 @@ export function mondayOf(dateKey: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function formatDuration(seconds: number): string {
+/** Human-readable duration; `locale` switches Chinese (default) or compact English units. */
+export function formatDuration(seconds: number, locale: 'zh' | 'en' = 'zh'): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
+  if (locale === 'en') {
+    if (h === 0 && m === 0) return s > 0 ? `${s}s` : '0m';
+    if (h === 0) return `${m}m`;
+    return `${h}h ${m}m`;
+  }
   if (h === 0 && m === 0) return s > 0 ? `${s} 秒` : '0 分钟';
   if (h === 0) return `${m} 分钟`;
   return `${h} 小时 ${m} 分钟`;

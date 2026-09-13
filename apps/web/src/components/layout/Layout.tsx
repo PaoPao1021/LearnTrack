@@ -2,19 +2,20 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { startSyncLoop } from '../../services/sync';
 import { ensureSeeded, ensureDeviceId } from '../../db/seed';
 import { useThemeBootstrap } from '../../features/settings/useTheme';
+import { useI18n } from '../../i18n';
 import { Suspense, useEffect, useState } from 'react';
 import { useTimer, elapsedSeconds } from '../../stores/timer';
 import { formatClock } from '../../utils';
 import {
-  LayoutDashboard, ScrollText, ChartSpline, Compass, Settings2, Timer,
+  LayoutDashboard, ScrollText, ChartSpline, Compass, Settings2, Timer, Languages,
 } from 'lucide-react';
 
-const NAV = [
-  { to: '/', label: '总览', en: 'OVERVIEW', icon: LayoutDashboard },
-  { to: '/entries', label: '记录', en: 'LOG', icon: ScrollText },
-  { to: '/analytics', label: '统计', en: 'STATS', icon: ChartSpline },
-  { to: '/learning', label: '学习', en: 'LEARN', icon: Compass },
-];
+const NAV_KEYS = [
+  { to: '/', key: 'nav.overview', icon: LayoutDashboard },
+  { to: '/entries', key: 'nav.entries', icon: ScrollText },
+  { to: '/analytics', key: 'nav.analytics', icon: ChartSpline },
+  { to: '/learning', key: 'nav.learning', icon: Compass },
+] as const;
 
 let initializationPromise: Promise<void> | null = null;
 function initializeLocalData(): Promise<void> {
@@ -32,6 +33,7 @@ function initializeLocalData(): Promise<void> {
 
 export default function Layout() {
   const navigate = useNavigate();
+  const { t, locale, lang, setLang } = useI18n();
   useThemeBootstrap();
   const [time, setTime] = useState('');
   useEffect(() => {
@@ -39,12 +41,12 @@ export default function Layout() {
     let stopSync = () => {};
     void initializeLocalData().then(() => {
       if (!disposed) stopSync = startSyncLoop();
-    }).catch((error) => console.error('本地数据初始化失败', error));
+    }).catch((error) => console.error('local data init failed', error));
     const clock = window.setInterval(() => {
-      setTime(new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()));
+      setTime(new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()));
     }, 1000);
     return () => { disposed = true; stopSync(); window.clearInterval(clock); };
-  }, []);
+  }, [locale]);
 
   const timer = useTimer();
   useEffect(() => {
@@ -56,6 +58,8 @@ export default function Layout() {
 
   return (
     <div className="relative flex min-h-full">
+      {/* 颗粒纹理：内容层之下，正文不受噪点影响 */}
+      <div aria-hidden className="bg-grain" />
       {/* Desktop rail：控制层 · 常规玻璃 */}
       <aside className="glass-regular sticky top-0 z-10 hidden h-screen w-60 shrink-0 flex-col justify-between border-y-0 border-l-0 p-6 md:flex">
         <div>
@@ -66,8 +70,8 @@ export default function Layout() {
           <div className="mono mt-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>TIME · LEDGER</div>
         </div>
 
-        <nav className="flex flex-col gap-1" aria-label="主导航">
-          {NAV.map((n, i) => (
+        <nav className="flex flex-col gap-1" aria-label={t('a11y.mainNav')}>
+          {NAV_KEYS.map((n, i) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -92,7 +96,7 @@ export default function Layout() {
                     />
                   )}
                   <n.icon size={18} strokeWidth={isActive ? 2.1 : 1.8} />
-                  <span className="text-sm font-semibold">{n.label}</span>
+                  <span className="text-sm font-semibold">{t(n.key)}</span>
                   <span className="mono ml-auto text-[9px]" style={{ color: 'var(--text-tertiary)' }}>0{i + 1}</span>
                 </>
               )}
@@ -101,10 +105,24 @@ export default function Layout() {
         </nav>
 
         <div className="space-y-4">
-          <div className="tick-text text-xs" style={{ color: 'var(--text-tertiary)' }} suppressHydrationWarning>{time} CST</div>
-          <button className="btn-ghost w-full" onClick={() => navigate('/settings')}>
-            <Settings2 size={16} strokeWidth={1.8} /> 设置
-          </button>
+          <div className="tick-text text-xs" style={{ color: 'var(--text-tertiary)' }} suppressHydrationWarning>{t('common.time', { time })}</div>
+          <div className="flex gap-2">
+            <button
+              className="btn-ghost w-full"
+              onClick={() => navigate('/settings')}
+            >
+              <Settings2 size={16} strokeWidth={1.8} /> {t('nav.settings')}
+            </button>
+            <button
+              className="btn-ghost shrink-0 px-3"
+              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+              aria-label={t('lang.switchAria')}
+              title={t('lang.switchAria')}
+            >
+              <Languages size={16} strokeWidth={1.8} />
+              <span className="text-xs font-semibold">{lang === 'zh' ? 'EN' : '中文'}</span>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -118,37 +136,44 @@ export default function Layout() {
                 <Timer size={14} /> {formatClock(elapsed)}
               </span>
             )}
-            <button className="btn-ghost p-2.5" onClick={() => navigate('/settings')} aria-label="设置">
+            <button
+              className="btn-ghost p-2.5"
+              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+              aria-label={t('lang.switchAria')}
+            >
+              <span className="text-xs font-semibold">{lang === 'zh' ? 'EN' : '中'}</span>
+            </button>
+            <button className="btn-ghost p-2.5" onClick={() => navigate('/settings')} aria-label={t('nav.settings')}>
               <Settings2 size={16} strokeWidth={1.8} />
             </button>
           </div>
         </header>
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-8 md:px-8 md:pb-14">
-          <Suspense fallback={<div className="p-6 text-sm" style={{ color: 'var(--text-secondary)' }}>加载中…</div>}>
+          <Suspense fallback={<div className="p-6 text-sm" style={{ color: 'var(--text-secondary)' }}>{t('common.loading')}</div>}>
             <Outlet />
           </Suspense>
         </main>
 
         {/* Mobile bottom nav：控制层 · 常规玻璃 */}
         <nav
-          aria-label="底部导航"
+          aria-label={t('a11y.bottomNav')}
           className="glass-regular fixed inset-x-0 bottom-0 z-10 flex border-x-0 border-b-0 md:hidden"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          {NAV.map((n) => (
+          {NAV_KEYS.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
               end={n.to === '/'}
               className={({ isActive }) =>
-                `flex flex-1 flex-col items-center gap-1 py-3 text-[11px] transition-colors ${isActive ? 'font-semibold' : 'opacity-50'}`}
+                `flex flex-1 flex-col items-center gap-1 py-3 text-[11px] transition-colors ${isActive ? 'font-semibold' : 'opacity-60'}`}
               style={({ isActive }) => (isActive ? { color: 'var(--accent)' } : undefined)}
             >
               {({ isActive }) => (
                 <>
                   <n.icon size={19} strokeWidth={isActive ? 2.2 : 1.6} />
-                  {n.label}
+                  {t(n.key)}
                 </>
               )}
             </NavLink>

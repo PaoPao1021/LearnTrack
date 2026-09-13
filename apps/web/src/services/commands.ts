@@ -3,6 +3,7 @@ import { ensureDeviceId } from '../db/seed';
 import { enqueueOp, bumpVersion } from '../services/queue';
 import { uuid, nowIso, TZ, todayKey } from '../utils';
 import { overlaps } from '@learntrack/domain';
+import { AppError } from './errors';
 import type { EntryRecord, LearningPath, PathItem, ProgressEvent, Todo, Goal, Category, QuickAction } from '@learntrack/domain';
 
 function uuid2(): string { return uuid(); }
@@ -33,8 +34,8 @@ export async function findOverlaps(startedAt: number, endedAt: number): Promise<
 export async function saveEntryWithProgress(
   input: SaveEntryInput,
 ): Promise<{ entry: EntryRecord; overlapCount: number }> {
-  if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) throw new Error('学习时长必须大于 0');
-  if (input.quantityDelta != null && !Number.isInteger(input.quantityDelta)) throw new Error('进度增量必须是整数');
+  if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) throw new AppError('err.durationPositive');
+  if (input.quantityDelta != null && !Number.isInteger(input.quantityDelta)) throw new AppError('err.quantityInteger');
   const deviceId = await ensureDeviceId();
   const overlapCount = input.startedAt != null && input.endedAt != null
     ? (await findOverlaps(input.startedAt, input.endedAt)).length
@@ -150,7 +151,7 @@ export async function deleteEntry(id: string, undoProgress: boolean): Promise<st
             await enqueueOp('progressEvent', ev.id, undone, ev.version, null, deviceId);
           }
         } else {
-          warning = '该记录没有可撤销的关联进度变更。';
+          warning = 'warn.noProgressToUndo';
         }
       }
     }
@@ -199,8 +200,8 @@ export async function createPath(input: {
   totalQuantity?: number | null; unit?: string | null; initialCompleted?: number;
 }): Promise<LearningPath> {
   if (input.mode === 'quantity') {
-    if (!Number.isInteger(input.totalQuantity) || (input.totalQuantity ?? 0) < 1) throw new Error('路线总量必须是正整数');
-    if (!Number.isInteger(input.initialCompleted ?? 0) || (input.initialCompleted ?? 0) < 0) throw new Error('初始完成量必须是非负整数');
+    if (!Number.isInteger(input.totalQuantity) || (input.totalQuantity ?? 0) < 1) throw new AppError('err.pathTotal');
+    if (!Number.isInteger(input.initialCompleted ?? 0) || (input.initialCompleted ?? 0) < 0) throw new AppError('err.pathInitial');
   }
   const deviceId = await ensureDeviceId();
   const path: LearningPath = {
@@ -252,7 +253,7 @@ export async function setItemDone(item: PathItem, done: boolean): Promise<void> 
 }
 
 export async function addQuantity(pathId: string, delta: number): Promise<void> {
-  if (!Number.isInteger(delta)) throw new Error('进度增量必须是整数');
+  if (!Number.isInteger(delta)) throw new AppError('err.quantityInteger');
   const deviceId = await ensureDeviceId();
   const path = await db.paths.get(pathId);
   if (!path) return;
@@ -321,7 +322,7 @@ export async function deleteTodo(id: string): Promise<void> {
 }
 
 export async function setGoal(input: { scope: Goal['scope']; subjectId: string | null; period: Goal['period']; targetSeconds: number }): Promise<void> {
-  if (!Number.isFinite(input.targetSeconds) || input.targetSeconds < 0) throw new Error('目标时长必须是非负数');
+  if (!Number.isFinite(input.targetSeconds) || input.targetSeconds < 0) throw new AppError('err.goalNonNegative');
   const deviceId = await ensureDeviceId();
   // one active goal per scope+period
   const existing = await db.goals

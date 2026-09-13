@@ -2,8 +2,9 @@ import { FormEvent, useState } from 'react';
 import { X } from 'lucide-react';
 import { Modal } from './Modal';
 import { Segmented } from './Segmented';
-import { useActivities } from './useActivities';
 import { ActivityCombobox } from './ActivityCombobox';
+import { useActivities } from './useActivities';
+import { useI18n, translateError } from '../../i18n';
 import { saveEntryWithProgress, findOverlaps } from '../../services/commands';
 import { todayKey, TZ } from '../../utils';
 import { db } from '../../db/database';
@@ -29,6 +30,7 @@ export interface EntryModalProps {
 }
 
 export default function EntryModal({ open, onClose, initialActivityId, initialDate }: EntryModalProps) {
+  const { t } = useI18n();
   const activities = useActivities();
   const [mode, setMode] = useState<'duration' | 'range'>('duration');
   const [activityId, setActivityId] = useState<string>(initialActivityId ?? '');
@@ -53,7 +55,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
     e.preventDefault();
     setError('');
     if (!activityId) {
-      setError('请选择学习活动');
+      setError(t('entry.errPickActivity'));
       return;
     }
     let startedAt: number | null = null;
@@ -61,7 +63,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
     let durationSeconds = 0;
     if (mode === 'duration') {
       if (!Number.isFinite(minutes) || minutes <= 0) {
-        setError('请填写大于 0 的时长');
+        setError(t('entry.errDuration'));
         return;
       }
       durationSeconds = minutes * 60;
@@ -70,17 +72,17 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
       const endDayOffset = end < start ? 1 : 0; // cross-midnight
       endedAt = fromLocalInputValue(`${date}T${end}`) + endDayOffset * 86_400_000;
       if (endedAt <= startedAt) {
-        setError('结束时间必须晚于开始时间');
+        setError(t('entry.errEndBeforeStart'));
         return;
       }
       durationSeconds = Math.round((endedAt - startedAt) / 1000);
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setError('请选择有效的学习日期');
+      setError(t('entry.errInvalidDate'));
       return;
     }
     if (quantityDelta !== '' && !Number.isFinite(quantityDelta)) {
-      setError('进度增量必须是有效数字');
+      setError(t('entry.errQuantity'));
       return;
     }
     // 重叠检测先于落库：未确认时不保存，避免双写
@@ -109,7 +111,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败，请重试');
+      setError(translateError(err, t));
     }
   };
 
@@ -119,7 +121,7 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
     <Modal
       labelledBy="entry-modal-title"
       onClose={onClose}
-      overlayClassName="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 md:items-center md:p-4"
+      overlayClassName="modal-overlay fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 md:items-center md:p-4"
       panelClassName="modal-panel glass-emphasis max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl p-5 md:rounded-2xl"
     >
       <form
@@ -128,38 +130,38 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
         <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="label">New Entry</div>
-            <h2 id="entry-modal-title" className="display text-2xl">添加学习记录</h2>
+            <h2 id="entry-modal-title" className="display text-2xl">{t('entry.title')}</h2>
           </div>
-          <button type="button" className="btn-ghost px-2.5 py-2" onClick={onClose} aria-label="关闭">
+          <button type="button" className="btn-ghost p-2.5" onClick={onClose} aria-label={t('common.close')}>
             <X size={16} />
           </button>
         </div>
 
         <div className="mb-3">
           <Segmented
-            ariaLabel="记录方式"
+            ariaLabel={t('entry.modeDuration') + ' / ' + t('entry.modeRange')}
             value={mode}
             onChange={setMode}
             options={[
-              { value: 'duration', label: '只填时长' },
-              { value: 'range', label: '填写时间段' },
+              { value: 'duration', label: t('entry.modeDuration') },
+              { value: 'range', label: t('entry.modeRange') },
             ] as const}
           />
         </div>
 
         <div className="mb-3">
-          <label className="label" htmlFor="entry-activity">学习活动（支持搜索）</label>
-          <ActivityCombobox inputId="entry-activity" value={activityId} onChange={setActivityId} placeholder="搜索大科目 / 科目 / 活动…" />
+          <label className="label" htmlFor="entry-activity">{t('entry.activity')}</label>
+          <ActivityCombobox inputId="entry-activity" value={activityId} onChange={setActivityId} placeholder={t('entry.activityPlaceholder')} />
         </div>
 
         <div className="mb-3">
-          <label className="label" htmlFor="entry-date">学习日期</label>
+          <label className="label" htmlFor="entry-date">{t('entry.date')}</label>
           <input id="entry-date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
 
         {mode === 'duration' ? (
           <div className="mb-3">
-            <label className="label" htmlFor="entry-minutes">时长（分钟）</label>
+            <label className="label" htmlFor="entry-minutes">{t('entry.minutes')}</label>
             <div className="mb-2 flex flex-wrap gap-2">
               {QUICK_DURATIONS.map((m) => (
                 <button key={m} type="button" aria-pressed={minutes === m} className={minutes === m ? 'btn-primary px-3 py-1' : 'btn-ghost px-3 py-1'} onClick={() => setMinutes(m)}>{m}</button>
@@ -170,53 +172,53 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
         ) : (
           <div className="mb-3 grid grid-cols-2 gap-3">
             <div>
-              <label className="label" htmlFor="entry-start">开始时间</label>
+              <label className="label" htmlFor="entry-start">{t('entry.start')}</label>
               <input id="entry-start" type="time" className="input" value={start} onChange={(e) => setStart(e.target.value)} />
             </div>
             <div>
-              <label className="label" htmlFor="entry-end">结束时间（可跨午夜）</label>
+              <label className="label" htmlFor="entry-end">{t('entry.end')}</label>
               <input id="entry-end" type="time" className="input" value={end} onChange={(e) => setEnd(e.target.value)} />
             </div>
           </div>
         )}
 
-        <button type="button" className="mb-3 text-sm text-slate-500 underline dark:text-slate-400" aria-expanded={showExtra} onClick={() => setShowExtra(!showExtra)}>
-          {showExtra ? '收起可选信息' : '展开可选信息（状态评分 / 打断 / 备注 / 进度）'}
+        <button type="button" className="mb-3 text-sm underline" style={{ color: 'var(--text-secondary)' }} aria-expanded={showExtra} onClick={() => setShowExtra(!showExtra)}>
+          {showExtra ? t('entry.moreHide') : t('entry.moreShow')}
         </button>
 
         {showExtra && (
           <div className="mb-3 space-y-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
             <div>
-              <label className="label" htmlFor="entry-mood">自评状态（1–5，可不打）</label>
+              <label className="label" htmlFor="entry-mood">{t('entry.mood')}</label>
               <select id="entry-mood" className="input" value={mood} onChange={(e) => setMood(e.target.value === '' ? '' : Number(e.target.value))}>
-                <option value="">未评分</option>
+                <option value="">{t('entry.moodNone')}</option>
                 {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             <div>
-              <label className="label" htmlFor="entry-interruption">打断原因（可不打）</label>
-              <input id="entry-interruption" className="input" value={interruption} onChange={(e) => setInterruption(e.target.value)} placeholder="例如：手机、休息、被人打扰" />
+              <label className="label" htmlFor="entry-interruption">{t('entry.interruption')}</label>
+              <input id="entry-interruption" className="input" value={interruption} onChange={(e) => setInterruption(e.target.value)} placeholder={t('entry.interruptionPlaceholder')} />
             </div>
             <div>
-              <label className="label" htmlFor="entry-note">备注</label>
+              <label className="label" htmlFor="entry-note">{t('entry.note')}</label>
               <input id="entry-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="label" htmlFor="entry-link-path">关联路线（可选）</label>
+                <label className="label" htmlFor="entry-link-path">{t('entry.linkPath')}</label>
                 <select id="entry-link-path" className="input" value={linkPathId} onChange={(e) => { setLinkPathId(e.target.value); setQuantityDelta(''); }}>
-                  <option value="">不关联</option>
+                  <option value="">{t('entry.linkNone')}</option>
                   {(paths ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               {selectedPath?.mode === 'quantity' && (
                 <div>
-                  <label className="label" htmlFor="entry-quantity">同时增加{selectedPath.unit ?? '数量'}（可负）</label>
+                  <label className="label" htmlFor="entry-quantity">{t('entry.quantity', { unit: selectedPath.unit ?? t('entry.quantityUnit') })}</label>
                   <input id="entry-quantity" type="number" className="input" value={quantityDelta} onChange={(e) => setQuantityDelta(e.target.value === '' ? '' : Number(e.target.value))} />
                 </div>
               )}
               {selectedPath?.mode === 'chapters' && (
-                <div className="self-end text-xs text-slate-500 dark:text-slate-400">章节模式请在“学习”页勾选完成</div>
+                <div className="self-end text-xs text-slate-500 dark:text-slate-400">{t('entry.chaptersHint')}</div>
               )}
             </div>
           </div>
@@ -224,17 +226,16 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
 
         {overlapWarn && (
           <div role="alert" className="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-            该时间段与 {overlapWarn.count} 条已有记录重叠。确认保存后，两条记录都会完整计入统计（记录时长口径，不是去重的客观时长）。
-            再次点击保存即可确认保留。
+            {t('entry.overlap', { count: overlapWarn.count })}
           </div>
         )}
         {error && <div role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
 
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-ghost" onClick={onClose}>取消</button>
-          <button type="submit" className="btn-primary">{overlapWarn ? '确认保留并保存' : '保存'}</button>
+          <button type="button" className="btn-ghost" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="submit" className="btn-primary">{overlapWarn ? t('entry.confirmSave') : t('common.save')}</button>
         </div>
-        <div className="mt-2 text-right text-xs text-slate-400">约 {hoursFromSeconds(minutes * 60)} 小时</div>
+        <div className="mt-2 text-right text-xs text-slate-400">{t('entry.approxHours', { hours: hoursFromSeconds(minutes * 60) })}</div>
       </form>
     </Modal>
   );

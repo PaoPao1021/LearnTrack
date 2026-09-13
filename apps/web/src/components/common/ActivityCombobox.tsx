@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { useActivities, labelOf, type ActivityOption } from './useActivities';
+import { useI18n } from '../../i18n';
 
 export interface ActivityComboboxProps {
   value: string;
@@ -18,6 +19,7 @@ export interface ActivityComboboxProps {
  * 方向键 + 回车选择，Esc 关闭，类似浏览器搜索框的联想列表。
  */
 export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inputId, className }: ActivityComboboxProps) {
+  const { t } = useI18n();
   const activities = useActivities();
   const listId = useId();
   const [query, setQuery] = useState('');
@@ -73,7 +75,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           aria-autocomplete="list"
           aria-activedescendant={open && matches.length > 0 ? `${listId}-opt-${active}` : undefined}
           className="input pl-9 pr-8"
-          placeholder={selected ? `${labelOf(selected)} · ${selected.activity.name}` : (placeholder ?? '搜索学习活动…')}
+          placeholder={selected ? `${labelOf(selected)} · ${selected.activity.name}` : (placeholder ?? t('combo.placeholder'))}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
@@ -92,7 +94,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           <button
             type="button"
             className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 opacity-40 hover:opacity-90"
-            aria-label="清除"
+            aria-label={t('combo.clear')}
             onClick={() => { setQuery(''); onChange(''); setOpen(false); }}
           >
             <X size={13} />
@@ -128,7 +130,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
                   <span className="min-w-0 flex-1 truncate">
                     {highlight(label, query)}
                   </span>
-                  {value === o.activity.id && <span className="mono shrink-0 text-[9px]" style={{ color: 'var(--accent)' }}>当前</span>}
+                  {value === o.activity.id && <span className="mono shrink-0 text-[9px]" style={{ color: 'var(--accent)' }}>{t('combo.current')}</span>}
                 </button>
               </li>
             );
@@ -137,7 +139,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
       )}
       {open && query.trim() && matches.length === 0 && (
         <div className="glass-emphasis pop-in absolute z-30 mt-1.5 w-full rounded-2xl p-4 text-sm opacity-80">
-          没有匹配“{query}”的活动，可到设置页添加分类。
+          {t('combo.noMatch', { query })}
         </div>
       )}
     </div>

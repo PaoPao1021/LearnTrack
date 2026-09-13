@@ -1,6 +1,7 @@
 import { db, SETTINGS_KEYS, getSetting, setSetting } from '../db/database';
 import { deletePendingOpsByOpId } from './queue';
 import { SyncPullResponse, SyncPushResponse } from '@learntrack/contracts';
+import { AppError } from './errors';
 
 export interface SyncState {
   loggedIn: boolean;
@@ -28,7 +29,7 @@ export async function setServerUrl(url: string): Promise<void> {
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const base = await getServerUrl();
-  if (!base) throw new Error('未配置同步服务器地址');
+  if (!base) throw new AppError('sync.errNotConfigured');
   const response = await fetch(`${base}/api/v1${path}`, { credentials: 'include', ...init });
   if (response.status === 401 && path !== '/auth/login') await setSetting('loggedIn', false);
   return response;
@@ -40,7 +41,7 @@ export async function login(username: string, password: string): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
-  if (!res.ok) throw new Error(`登录失败（${res.status}）`);
+  if (!res.ok) throw new AppError('sync.errLogin', { status: res.status });
   await setSetting('loggedIn', true);
 }
 
@@ -78,9 +79,9 @@ async function pushOnce(): Promise<{ applied: string[]; conflicts: unknown[] }> 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceId, lastCursor, ops }),
   });
-  if (!res.ok) throw new Error(`推送失败（${res.status}）`);
+  if (!res.ok) throw new AppError('sync.errPush', { status: res.status });
   const parsed = SyncPushResponse.safeParse(await res.json());
-  if (!parsed.success) throw new Error('同步服务器返回了无效的推送响应');
+  if (!parsed.success) throw new AppError('sync.errInvalidPush');
   const data = parsed.data;
   await deletePendingOpsByOpId(data.appliedOpIds);
   // 注意：push 不推进游标；游标只由 pull 推进，否则其他设备的较小 seq 会被跳过
@@ -106,9 +107,9 @@ async function pushOnce(): Promise<{ applied: string[]; conflicts: unknown[] }> 
 async function pullOnce(): Promise<number> {
   const cursor = await getSetting<number>(SETTINGS_KEYS.lastSyncCursor, 0);
   const res = await apiFetch(`/sync/pull?cursor=${cursor}`);
-  if (!res.ok) throw new Error(`拉取失败（${res.status}）`);
+  if (!res.ok) throw new AppError('sync.errPull', { status: res.status });
   const parsed = SyncPullResponse.safeParse(await res.json());
-  if (!parsed.success) throw new Error('同步服务器返回了无效的拉取响应');
+  if (!parsed.success) throw new AppError('sync.errInvalidPull');
   const data = parsed.data;
   await applyRemoteOps(data.ops);
   await setSetting(SETTINGS_KEYS.lastSyncCursor, data.cursor);
@@ -122,7 +123,7 @@ export async function applyRemoteOps(ops: { entity: string; entityId: string; pa
     db.todos, db.goals, db.quickActions, db.settings,
   ], async () => {
     for (const op of ops) {
-      if (op.payload === undefined) throw new Error(`远端 ${op.entity} 操作缺少 payload`);
+      if (op.payload === undefined) throw new AppError('sync.errMissingPayload', { entity: op.entity });
       // null payload = 删除标记（tombstone）：本地同样删除，避免远端复活
       if (op.payload == null) {
         switch (op.entity) {
@@ -140,17 +141,17 @@ export async function applyRemoteOps(ops: { entity: string; entityId: string; pa
         continue;
       }
       if (typeof op.payload !== 'object' || Array.isArray(op.payload)) {
-        throw new Error(`远端 ${op.entity} 数据格式不正确`);
+        throw new AppError('sync.errBadPayload', { entity: op.entity });
       }
       if (op.entity === 'settings') {
         const setting = op.payload as { key?: string; value?: unknown };
-        if (setting.key !== op.entityId) throw new Error('远端设置标识与操作不一致');
+        if (setting.key !== op.entityId) throw new AppError('sync.errSettingMismatch');
         await db.settings.put({ key: setting.key, value: setting.value });
         continue;
       }
       const p = op.payload as { id?: string; version?: number; deletedAt?: string | null };
       if (p.id !== op.entityId) {
-        throw new Error(`远端 ${op.entity} 标识与操作不一致`);
+        throw new AppError('sync.errIdMismatch', { entity: op.entity });
       }
       switch (op.entity) {
         case 'category': await db.categories.put(p as never); break;

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
 import { Modal } from '../../components/common/Modal';
 import { Segmented } from '../../components/common/Segmented';
+import { useI18n, type MessageKey } from '../../i18n';
 import { THEME_CHANGE_EVENT } from '../settings/useTheme';
 import {
   computeStats, formatDuration, previousRange, daysBetweenInclusive,
@@ -43,6 +44,8 @@ function chartPalette() {
     prev: cssVar('--chart-label', '#9ca3af'),
   };
 }
+
+const PRESETS: Preset[] = ['day', 'week', 'month', 'year', 'custom'];
 
 function rangeFor(preset: Preset, customFrom: string, customTo: string): { from: string; to: string } {
   const today = todayKey();
@@ -118,7 +121,7 @@ function buildMajorSeries(
 
   const series = [...maps.entries()]
     .map(([majorId, perDay]) => ({
-      name: byId.get(majorId)?.name ?? '未知',
+      name: byId.get(majorId)?.name ?? '?',
       color: byId.get(majorId)?.color ?? '#888',
       data: days.map((k) => perDay.get(k) ?? 0),
     }))
@@ -157,17 +160,18 @@ function entrySecondsInRange(entry: EntryRecord, from: string, to: string): numb
 }
 
 function DrillModal({ title, entries, onClose }: { title: string; entries: EntryRecord[]; onClose: () => void }) {
+  const { t, fmtDuration, locale } = useI18n();
   return (
     <Modal labelledBy="drill-title" onClose={onClose} panelClassName="modal-panel glass-emphasis max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5">
       <h2 id="drill-title" className="display mb-3 text-lg">{title}</h2>
-      {entries.length === 0 && <p className="text-sm opacity-60">没有记录。</p>}
+      {entries.length === 0 && <p className="text-sm opacity-60">{t('drill.empty')}</p>}
       <ul className="space-y-2 text-sm">
         {entries.map((e) => (
           <li key={e.id} className="rounded-lg px-3 py-2" style={{ background: 'color-mix(in srgb, var(--ink) 5%, transparent)' }}>
-            <span className="font-semibold">{formatDuration(e.durationSeconds)}</span>
+            <span className="font-semibold">{fmtDuration(e.durationSeconds)}</span>
             {e.startedAt != null && (
               <span className="ml-2 text-xs opacity-60">
-                {new Date(e.startedAt).toLocaleString('zh-CN', { timeZone: TZ, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 起
+                {new Date(e.startedAt).toLocaleString(locale, { timeZone: TZ, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}{t('drill.since')}
               </span>
             )}
             {e.note ? <span className="ml-2 opacity-70">{e.note}</span> : null}
@@ -179,7 +183,7 @@ function DrillModal({ title, entries, onClose }: { title: string; entries: Entry
 }
 
 /** 图表容器的空状态覆盖层：空数据不再只剩空白坐标轴。 */
-function ChartEmpty({ text = '所选范围内暂无记录' }: { text?: string }) {
+function ChartEmpty({ text }: { text: string }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center">
       <p className="text-sm opacity-60">{text}</p>
@@ -188,9 +192,9 @@ function ChartEmpty({ text = '所选范围内暂无记录' }: { text?: string })
 }
 
 export default function Analytics() {
+  const { t, fmtDuration, locale, lang } = useI18n();
   // 预设、自定义范围与粒度保存在 URL：刷新、返回、分享链接都能还原上下文
   const [searchParams, setSearchParams] = useSearchParams();
-  const PRESETS: Preset[] = ['day', 'week', 'month', 'year', 'custom'];
   const presetRaw = searchParams.get('preset') as Preset | null;
   const preset: Preset = presetRaw && PRESETS.includes(presetRaw) ? presetRaw : 'week';
   const customFrom = searchParams.get('from') ?? todayKey();
@@ -210,7 +214,7 @@ export default function Analytics() {
   const entries = useLiveQuery(() => db.entries.toArray(), [], [] as EntryRecord[]);
   const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
   const [drill, setDrill] = useState<{ title: string; entries: EntryRecord[] } | null>(null);
-  // 主题切换（深浅色 / 强调色）后重绘图表，读取新的调色令牌
+  // 主题切换（深浅色 / 强调色 / 语言）后重绘图表，读取新的调色令牌与文案
   const [themeTick, bumpThemeTick] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     const handler = () => bumpThemeTick();
@@ -245,6 +249,7 @@ export default function Analytics() {
   const span = daysBetweenInclusive(range.from, range.to);
   const gran: 'day' | 'week' | 'month' =
     granularity === 'auto' ? (span > 400 ? 'month' : span > 45 ? 'week' : 'day') : granularity;
+  const granName = t(`gran.${gran}` as MessageKey);
 
   const aggregateSeries = (data: number[], dates: string[]): { labels: string[]; values: number[] } => {
     if (gran === 'day') return { labels: dates, values: data };
@@ -265,7 +270,7 @@ export default function Analytics() {
     const cur = aggregateSeries(majorSeries.days.map((day) => currentByDay.get(day) ?? 0), majorSeries.days);
     const prevAgg = aggregateSeries(prevMajorSeries.days.map((day) => previousByDay.get(day) ?? 0), prevMajorSeries.days);
     chart.setOption({
-      tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatDuration(Number(v)) },
+      tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatDuration(Number(v), lang) },
       legend: { top: 0, textStyle: { fontSize: 11, color: palette.label } },
       grid: { left: 48, right: 12, top: 36, bottom: 24 },
       xAxis: { type: 'category', data: cur.labels, axisLabel: { fontSize: 10, color: palette.label }, axisLine: { lineStyle: { color: palette.line } } },
@@ -282,13 +287,13 @@ export default function Analytics() {
           areaStyle: { opacity: 0.08, color: s.color },
         })),
         {
-          name: '上期', type: 'line' as const, smooth: true, symbol: 'none',
+          name: t('trend.prev'), type: 'line' as const, smooth: true, symbol: 'none',
           data: prevAgg.values, lineStyle: { width: 1.5, type: 'dashed', opacity: 0.5 },
           itemStyle: { color: palette.prev },
         },
       ],
     });
-  }, [stats.byDay, prevStats.byDay, majorSeries, prevMajorSeries, gran, themeTick]);
+  }, [stats.byDay, prevStats.byDay, majorSeries, prevMajorSeries, gran, lang, themeTick]);
 
   // 扇形图：双层环，内环大科目，外环具体科目；点击下钻原始记录（零值分类不参与渲染）
   const pieRef = useChart((chart) => {
@@ -299,7 +304,7 @@ export default function Analytics() {
     ).filter((d) => d.value > 0);
     const colorOf = (id: string) => byId.get(id)?.color;
     chart.setOption({
-      tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}：${formatDuration(p.value)}（${p.percent}%）` },
+      tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}：${formatDuration(p.value, lang)}（${p.percent}%）` },
       legend: { bottom: 0, textStyle: { fontSize: 10, color: palette.label }, type: 'scroll' },
       series: [
         {
@@ -327,9 +332,9 @@ export default function Analytics() {
             return subject?.parentId === id;
           })();
       });
-      setDrill({ title: `${catName(id)} 的记录（${range.from} 至 ${range.to}）`, entries: hits });
+      setDrill({ title: `${catName(id)} · ${range.from} → ${range.to}`, entries: hits });
     });
-  }, [stats.categories, categories, entries, range.from, range.to, themeTick]);
+  }, [stats.categories, categories, entries, range.from, range.to, lang, themeTick]);
 
   // 科目排行（具体科目横向条形）
   const ranking = useMemo(() => {
@@ -345,7 +350,7 @@ export default function Analytics() {
   const rankRef = useChart((chart) => {
     const palette = chartPalette();
     chart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => formatDuration(Number(v)) },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => formatDuration(Number(v), lang) },
       grid: { left: 90, right: 52, top: 8, bottom: 8 },
       xAxis: { type: 'value', show: false },
       yAxis: { type: 'category', inverse: true, data: ranking.map((r) => r.name), axisLabel: { fontSize: 11, color: palette.label } },
@@ -355,15 +360,15 @@ export default function Analytics() {
         label: { show: true, position: 'right', fontSize: 10, color: palette.label, formatter: (p: { value: number }) => `${(p.value / 3600).toFixed(1)}h` },
       }],
     });
-  }, [ranking, themeTick]);
+  }, [ranking, lang, themeTick]);
 
   // 单次时长分布
   const durationDist = useMemo(() => {
     const buckets = [
-      { label: '<30 分钟', min: 0, max: 1800, count: 0 },
-      { label: '30–60 分钟', min: 1800, max: 3600, count: 0 },
-      { label: '1–2 小时', min: 3600, max: 7200, count: 0 },
-      { label: '2 小时以上', min: 7200, max: Infinity, count: 0 },
+      { label: '<30', min: 0, max: 1800, count: 0 },
+      { label: '30–60', min: 1800, max: 3600, count: 0 },
+      { label: '1–2h', min: 3600, max: 7200, count: 0 },
+      { label: '>2h', min: 7200, max: Infinity, count: 0 },
     ];
     for (const e of entries ?? []) {
       if (entrySecondsInRange(e, range.from, range.to) <= 0) continue;
@@ -382,12 +387,12 @@ export default function Analytics() {
       yAxis: { type: 'value', minInterval: 1, splitNumber: 3, axisLabel: { color: palette.label }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [{ type: 'bar', barWidth: 26, borderRadius: [6, 6, 0, 0], data: durationDist.map((b) => b.count), itemStyle: { color: palette.accent } }],
     });
-  }, [durationDist, themeTick]);
+  }, [durationDist, lang, themeTick]);
 
   const hourRef = useChart((chart) => {
     const palette = chartPalette();
     chart.setOption({
-      tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatDuration(Number(v)) },
+      tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatDuration(Number(v), lang) },
       grid: { left: 44, right: 12, top: 12, bottom: 24 },
       xAxis: { type: 'category', data: stats.byHour.map((h) => `${h.hour}`), axisLabel: { fontSize: 10, color: palette.label }, axisLine: { lineStyle: { color: palette.line } } },
       yAxis: {
@@ -397,14 +402,14 @@ export default function Analytics() {
       },
       series: [{ type: 'bar', barWidth: '70%', borderRadius: [4, 4, 0, 0], data: stats.byHour.map((h) => h.seconds), itemStyle: { color: palette.accent } }],
     });
-  }, [stats.byHour, themeTick]);
+  }, [stats.byHour, lang, themeTick]);
 
   const heatRef = useChart((chart) => {
     const palette = chartPalette();
     const yearStart = `${todayKey().slice(0, 4)}-01-01`;
     const data = stats.byDay.map((d) => [d.date, d.seconds]);
     chart.setOption({
-      tooltip: { formatter: (p: { value: [string, number] }) => `${p.value[0]}: ${formatDuration(p.value[1])}` },
+      tooltip: { formatter: (p: { value: [string, number] }) => `${p.value[0]}: ${formatDuration(p.value[1], lang)}` },
       visualMap: { min: 0, max: Math.max(4 * 3600, ...stats.byDay.map((d) => d.seconds)), show: false },
       calendar: {
         range: [yearStart, todayKey()],
@@ -424,9 +429,9 @@ export default function Analytics() {
     chart.on('click', (params: unknown) => {
       const day = (params as { value?: [string, number] }).value?.[0];
       if (!day) return;
-      setDrill({ title: `${day} 的记录`, entries: (entries ?? []).filter((e) => !e.deletedAt && (entrySecondsByLocalDay(e)[day] ?? 0) > 0) });
+      setDrill({ title: t('heat.drillTitle', { day }), entries: (entries ?? []).filter((e) => !e.deletedAt && (entrySecondsByLocalDay(e)[day] ?? 0) > 0) });
     });
-  }, [stats.byDay, entries, themeTick]);
+  }, [stats.byDay, entries, lang, themeTick]);
 
   const deltaPct = prevStats.totalSeconds > 0
     ? Math.round(((stats.totalSeconds - prevStats.totalSeconds) / prevStats.totalSeconds) * 100)
@@ -434,35 +439,31 @@ export default function Analytics() {
   const bestDay = [...stats.byDay].sort((a, b) => b.seconds - a.seconds)[0];
   const topSubject = stats.categories.flatMap((m) => m.children).sort((a, b) => b.totalSeconds - a.totalSeconds)[0];
 
+  const distAria = durationDist.map((b) => `${b.label} ${b.count}`).join(', ');
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="display text-xl">统计</h1>
+        <h1 className="display text-xl">{t('stats.title')}</h1>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-2 md:justify-end">
           <Segmented
-            ariaLabel="统计范围"
+            ariaLabel={t('stats.title')}
             value={preset}
             onChange={(p) => setParams({ preset: p })}
-            options={[
-              { value: 'day', label: '今日' },
-              { value: 'week', label: '本周' },
-              { value: 'month', label: '本月' },
-              { value: 'year', label: '今年' },
-              { value: 'custom', label: '自定义' },
-            ] as const}
+            options={PRESETS.map((p) => ({ value: p, label: t(`preset.${p}` as MessageKey) }))}
           />
           {preset === 'custom' && (
             <span className="flex items-center gap-2">
-              <input type="date" className="input w-auto py-1.5 text-xs" aria-label="开始日期" value={customFrom} onChange={(e) => setParams({ from: e.target.value })} />
-              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>至</span>
-              <input type="date" className="input w-auto py-1.5 text-xs" aria-label="结束日期" value={customTo} onChange={(e) => setParams({ to: e.target.value })} />
+              <input type="date" className="input w-auto py-1.5 text-xs" aria-label={t('stats.fromLabel')} value={customFrom} onChange={(e) => setParams({ from: e.target.value })} />
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('stats.to')}</span>
+              <input type="date" className="input w-auto py-1.5 text-xs" aria-label={t('stats.toLabel')} value={customTo} onChange={(e) => setParams({ to: e.target.value })} />
             </span>
           )}
-          <select className="input py-1.5 text-xs" style={{ width: 132 }} value={granularity} onChange={(e) => setParams({ gran: e.target.value })} aria-label="趋势粒度">
-            <option value="auto">粒度：自动</option>
-            <option value="day">按日</option>
-            <option value="week">按周</option>
-            <option value="month">按月</option>
+          <select className="input py-1.5 text-xs" style={{ width: 132 }} value={granularity} onChange={(e) => setParams({ gran: e.target.value })} aria-label={t('stats.granularityLabel')}>
+            <option value="auto">{t('gran.auto')}</option>
+            <option value="day">{t('gran.day')}</option>
+            <option value="week">{t('gran.week')}</option>
+            <option value="month">{t('gran.month')}</option>
           </select>
         </div>
       </div>
@@ -470,28 +471,28 @@ export default function Analytics() {
       {/* 指标卡 */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{formatDuration(stats.totalSeconds)}</div>
-          <div className="chart-title mt-1">总时长{deltaPct != null && ` · 上期${deltaPct >= 0 ? '+' : ''}${deltaPct}%`}</div>
+          <div className="tick-text text-lg font-semibold">{fmtDuration(stats.totalSeconds)}</div>
+          <div className="chart-title mt-1">{t('metric.total')}{deltaPct != null && t('metric.prevPct', { pct: `${deltaPct >= 0 ? '+' : ''}${deltaPct}%` })}</div>
         </div>
         <div className="card p-3.5 text-center">
           <div className="tick-text text-lg font-semibold">{stats.entryCount}</div>
-          <div className="chart-title mt-1">记录次数</div>
+          <div className="chart-title mt-1">{t('metric.count')}</div>
         </div>
         <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{formatDuration(stats.avgPerCalendarDaySeconds)}</div>
-          <div className="chart-title mt-1">自然日日均（{span} 天）</div>
+          <div className="tick-text text-lg font-semibold">{fmtDuration(stats.avgPerCalendarDaySeconds)}</div>
+          <div className="chart-title mt-1">{t('metric.calendarAvg', { days: span })}</div>
         </div>
         <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{formatDuration(stats.avgPerActiveDaySeconds)}</div>
-          <div className="chart-title mt-1">有记录日日均（{stats.activeDayCount} 天）</div>
+          <div className="tick-text text-lg font-semibold">{fmtDuration(stats.avgPerActiveDaySeconds)}</div>
+          <div className="chart-title mt-1">{t('metric.activeAvg', { days: stats.activeDayCount })}</div>
         </div>
         <div className="card p-3.5 text-center">
           <div className="tick-text flex items-center justify-center gap-1 text-lg font-semibold"><Flame size={15} className="text-orange-500" />{streak.current}</div>
-          <div className="chart-title mt-1">连续天数（最长 {streak.longest}）</div>
+          <div className="chart-title mt-1">{t('metric.streak', { best: streak.longest })}</div>
         </div>
         <div className="card p-3.5 text-center">
           <div className="tick-text text-lg font-semibold">{Math.round(stats.rangeCoverage * 100)}%</div>
-          <div className="chart-title mt-1">时间段覆盖率</div>
+          <div className="chart-title mt-1">{t('metric.coverage')}</div>
         </div>
       </div>
 
@@ -499,59 +500,62 @@ export default function Analytics() {
       <section className="card p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="display flex items-center gap-2 text-lg"><Layers size={17} /> 学习趋势 · 科目叠加</h2>
-            <p className="chart-title mt-1">实线为各大科目（{gran === 'day' ? '按日' : gran === 'week' ? '按周' : '按月'}），虚线为上一同长度区间总量对比</p>
+            <h2 className="display flex items-center gap-2 text-lg"><Layers size={17} /> {t('trend.title')}</h2>
+            <p className="chart-title mt-1">{t('trend.subtitle', { gran: granName })}</p>
           </div>
-          {bestDay && <span className="chart-title">单日峰值 {bestDay.date} · {formatDuration(bestDay.seconds)}</span>}
+          {bestDay && bestDay.seconds > 0 && <span className="chart-title">{t('trend.peak', { date: bestDay.date, dur: fmtDuration(bestDay.seconds) })}</span>}
         </div>
         <div
           className="relative"
           role="img"
-          aria-label={`学习趋势图：范围内总时长 ${formatDuration(stats.totalSeconds)}${bestDay ? `，单日峰值 ${bestDay.date} ${formatDuration(bestDay.seconds)}` : ''}。文字版见下方活动明细表。`}
+          aria-label={t('trend.aria', {
+            total: fmtDuration(stats.totalSeconds),
+            peak: bestDay && bestDay.seconds > 0 ? t('trend.peakPart', { date: bestDay.date, dur: fmtDuration(bestDay.seconds) }) : '',
+          })}
         >
           <div ref={trendRef} className="h-64" />
-          {stats.entryCount === 0 && <ChartEmpty />}
+          {stats.entryCount === 0 && <ChartEmpty text={t('chart.empty')} />}
         </div>
         <p className="sr-only">
           {majorSeries.series.length > 0
-            ? `各科目总时长：${majorSeries.series.map((s) => `${s.name} ${formatDuration(s.data.reduce((sum, v) => sum + v, 0))}`).join('，')}`
-            : '各科目暂无时长记录'}
+            ? t('trend.srAll', { list: majorSeries.series.map((s) => `${s.name} ${fmtDuration(s.data.reduce((sum, v) => sum + v, 0))}`).join(', ') })
+            : t('trend.srNone')}
         </p>
       </section>
 
       {/* 扇形图 + 排行 */}
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card p-5">
-          <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> 科目分布</h2>
-          <p className="chart-title mb-2">内环大科目 · 外环具体科目 · 原始记录请用下方活动明细表（键盘可用）</p>
+          <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> {t('pie.title')}</h2>
+          <p className="chart-title mb-2">{t('pie.subtitle')}</p>
           <div
             className="relative"
             role="img"
-            aria-label={topSubject
-              ? `科目分布环形图：投入最多 ${catName(topSubject.categoryId)}，${formatDuration(topSubject.totalSeconds)}，占 ${Math.round(topSubject.share * 100)}%`
-              : '科目分布环形图：暂无数据'}
+            aria-label={topSubject && topSubject.totalSeconds > 0
+              ? t('pie.ariaTop', { name: catName(topSubject.categoryId), dur: fmtDuration(topSubject.totalSeconds), pct: Math.round(topSubject.share * 100) })
+              : t('pie.ariaEmpty')}
           >
             <div ref={pieRef} className="h-72" />
-            {stats.totalSeconds === 0 && <ChartEmpty />}
+            {stats.totalSeconds === 0 && <ChartEmpty text={t('chart.empty')} />}
           </div>
-          {topSubject && (
+          {topSubject && topSubject.totalSeconds > 0 && (
             <p className="chart-title text-center">
-              投入最多：{catName(topSubject.categoryId)} · {formatDuration(topSubject.totalSeconds)}（{Math.round(topSubject.share * 100)}%）
+              {t('pie.top', { name: catName(topSubject.categoryId), dur: fmtDuration(topSubject.totalSeconds), pct: Math.round(topSubject.share * 100) })}
             </p>
           )}
         </section>
         <section className="card p-5">
-          <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> 具体科目排行</h2>
-          <p className="chart-title mb-2">所选范围内 Top 10</p>
+          <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> {t('rank.title')}</h2>
+          <p className="chart-title mb-2">{t('rank.subtitle')}</p>
           <div
             className="relative"
             role="img"
-            aria-label={ranking.some((r) => r.seconds > 0)
-              ? `具体科目排行：${ranking.slice(0, 3).map((r) => `${r.name} ${formatDuration(r.seconds)}`).join('，')}`
-              : '具体科目排行：暂无数据'}
+            aria-label={ranking.length > 0
+              ? t('rank.ariaTop', { list: ranking.slice(0, 3).map((r) => `${r.name} ${fmtDuration(r.seconds)}`).join(', ') })
+              : t('rank.ariaEmpty')}
           >
             <div ref={rankRef} className="h-72" />
-            {stats.totalSeconds === 0 && <ChartEmpty />}
+            {stats.totalSeconds === 0 && <ChartEmpty text={t('chart.empty')} />}
           </div>
         </section>
       </div>
@@ -559,47 +563,47 @@ export default function Analytics() {
       {/* 小时分布 + 单次时长分布 */}
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card p-5">
-          <h2 className="display mb-1 flex items-center gap-2 text-lg"><Clock3 size={17} /> 小时分布</h2>
+          <h2 className="display mb-1 flex items-center gap-2 text-lg"><Clock3 size={17} /> {t('hour.title')}</h2>
           <p className="chart-title mb-2">
-            仅真实时间段记录（覆盖率 {Math.round(stats.rangeCoverage * 100)}%）· 未指定时段 {formatDuration(stats.unspecifiedSeconds)} 不随机分配
+            {t('hour.subtitle', { pct: Math.round(stats.rangeCoverage * 100), dur: fmtDuration(stats.unspecifiedSeconds) })}
           </p>
           <div
             className="relative"
             role="img"
-            aria-label={`小时分布图：时间段记录覆盖率 ${Math.round(stats.rangeCoverage * 100)}%`}
+            aria-label={t('hour.aria', { pct: Math.round(stats.rangeCoverage * 100) })}
           >
             <div ref={hourRef} className="h-52" />
-            {stats.byHour.every((h) => h.seconds === 0) && <ChartEmpty />}
+            {stats.byHour.every((h) => h.seconds === 0) && <ChartEmpty text={t('chart.empty')} />}
           </div>
         </section>
         <section className="card p-5">
-          <h2 className="display mb-1 flex items-center gap-2 text-lg"><ListChecks size={17} /> 单次时长分布</h2>
-          <p className="chart-title mb-2">一次记录的长短习惯（条数）</p>
+          <h2 className="display mb-1 flex items-center gap-2 text-lg"><ListChecks size={17} /> {t('dist.title')}</h2>
+          <p className="chart-title mb-2">{t('dist.subtitle')}</p>
           <div
             className="relative"
             role="img"
-            aria-label={`单次时长分布：${durationDist.map((b) => `${b.label} ${b.count} 条`).join('，')}`}
+            aria-label={t('dist.aria', { list: distAria })}
           >
             <div ref={distRef} className="h-52" />
-            {durationDist.every((b) => b.count === 0) && <ChartEmpty />}
+            {durationDist.every((b) => b.count === 0) && <ChartEmpty text={t('chart.empty')} />}
           </div>
         </section>
       </div>
 
       {/* 活动明细表 */}
       <section className="card p-5">
-        <h2 className="display mb-1 flex items-center gap-2 text-lg"><ListChecks size={17} /> 活动明细</h2>
-        <p className="chart-title mb-3">活动级汇总，点击行或按回车查看原始记录（图表的键盘等价操作）</p>
+        <h2 className="display mb-1 flex items-center gap-2 text-lg"><ListChecks size={17} /> {t('table.title')}</h2>
+        <p className="chart-title mb-3">{t('table.subtitle')}</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-125 text-sm">
-            <caption className="sr-only">所选时间范围内各活动的次数、时长与占比</caption>
+            <caption className="sr-only">{t('table.caption')}</caption>
             <thead>
               <tr className="border-b text-left hairline">
-                <th className="py-2 pr-4 font-medium" scope="col">活动</th>
-                <th className="py-2 pr-4 text-right font-medium" scope="col">次数</th>
-                <th className="py-2 pr-4 text-right font-medium" scope="col">时长</th>
-                <th className="py-2 pr-4 text-right font-medium" scope="col">占比</th>
-                <th className="py-2 font-medium" scope="col">分布</th>
+                <th className="py-2 pr-4 font-medium" scope="col">{t('table.activity')}</th>
+                <th className="py-2 pr-4 text-right font-medium" scope="col">{t('table.count')}</th>
+                <th className="py-2 pr-4 text-right font-medium" scope="col">{t('table.duration')}</th>
+                <th className="py-2 pr-4 text-right font-medium" scope="col">{t('table.share')}</th>
+                <th className="py-2 font-medium" scope="col">{t('table.mix')}</th>
               </tr>
             </thead>
             <tbody>
@@ -618,7 +622,7 @@ export default function Analytics() {
                 if (rows.length === 0) {
                   return (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-sm opacity-60">所选范围内暂无记录</td>
+                      <td colSpan={5} className="py-6 text-center text-sm opacity-60">{t('chart.empty')}</td>
                     </tr>
                   );
                 }
@@ -628,13 +632,13 @@ export default function Analytics() {
                   const s = a?.parentId ? byId.get(a.parentId) : undefined;
                   const mj = s?.parentId ? byId.get(s.parentId) : undefined;
                   const openDrill = () => {
-                    setDrill({ title: `${r.name} 的记录（${range.from} 至 ${range.to}）`, entries: (entries ?? []).filter((e) => e.activityId === r.id && entrySecondsInRange(e, range.from, range.to) > 0) });
+                    setDrill({ title: `${r.name} · ${range.from} → ${range.to}`, entries: (entries ?? []).filter((e) => e.activityId === r.id && entrySecondsInRange(e, range.from, range.to) > 0) });
                   };
                   return (
                     <tr
                       key={r.id}
                       tabIndex={0}
-                      aria-label={`查看 ${r.name} 的原始记录`}
+                      aria-label={t('table.rowAria', { name: r.name })}
                       className="cursor-pointer border-b hairline hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
                       onClick={openDrill}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDrill(); } }}
@@ -644,7 +648,7 @@ export default function Analytics() {
                         <span className="opacity-60">{mj?.name} / {s?.name} / </span>{r.name}
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">{r.count}</td>
-                      <td className="py-2 pr-4 text-right font-semibold tabular-nums">{formatDuration(r.seconds)}</td>
+                      <td className="py-2 pr-4 text-right font-semibold tabular-nums">{fmtDuration(r.seconds)}</td>
                       <td className="py-2 pr-4 text-right tabular-nums">{stats.totalSeconds > 0 ? Math.round((r.seconds / stats.totalSeconds) * 100) : 0}%</td>
                       <td className="py-2">
                         <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: 'color-mix(in srgb, var(--ink) 8%, transparent)' }}>
@@ -663,9 +667,9 @@ export default function Analytics() {
       {/* 热力图 */}
       <section className="card p-5">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="display text-lg">学习热力图</h2>
+          <h2 className="display text-lg">{t('heat.title')}</h2>
           <div className="flex items-center gap-2">
-            <label className="chart-title" htmlFor="heat-day-input">查看某日明细</label>
+            <label className="chart-title" htmlFor="heat-day-input">{t('heat.pick')}</label>
             <input
               id="heat-day-input"
               type="date"
@@ -673,19 +677,19 @@ export default function Analytics() {
               onChange={(e) => {
                 const day = e.target.value;
                 if (!day) return;
-                setDrill({ title: `${day} 的记录`, entries: (entries ?? []).filter((en) => !en.deletedAt && (entrySecondsByLocalDay(en)[day] ?? 0) > 0) });
+                setDrill({ title: t('heat.drillTitle', { day }), entries: (entries ?? []).filter((en) => !en.deletedAt && (entrySecondsByLocalDay(en)[day] ?? 0) > 0) });
               }}
             />
           </div>
         </div>
-        <p className="chart-title mb-2">本年度按日展示</p>
+        <p className="chart-title mb-2">{t('heat.subtitle')}</p>
         <div
           className="relative"
           role="img"
-          aria-label={`本年度学习热力图：当前连续学习 ${streak.current} 天，最长连续 ${streak.longest} 天`}
+          aria-label={t('heat.aria', { current: streak.current, best: streak.longest })}
         >
           <div ref={heatRef} className="h-40" />
-          {stats.byDay.every((d) => d.seconds === 0) && <ChartEmpty />}
+          {stats.byDay.every((d) => d.seconds === 0) && <ChartEmpty text={t('chart.empty')} />}
         </div>
       </section>
 
@@ -693,9 +697,9 @@ export default function Analytics() {
       {(Object.keys(stats.moodDistribution).length > 0 || Object.keys(stats.interruptionCounts).length > 0) && (
         <div className="card grid gap-5 p-5 sm:grid-cols-2">
           <div>
-            <h2 className="display mb-2 text-lg">自评状态分布</h2>
+            <h2 className="display mb-2 text-lg">{t('mood.title')}</h2>
             {Object.keys(stats.moodDistribution).length === 0
-              ? <p className="text-sm opacity-50">暂无评分</p>
+              ? <p className="text-sm opacity-50">{t('mood.empty')}</p>
               : (
                 <div className="space-y-2">
                   {[5, 4, 3, 2, 1].map((n) => {
@@ -703,26 +707,26 @@ export default function Analytics() {
                     const total = Object.values(stats.moodDistribution).reduce((sum, v) => sum + v, 0);
                     return (
                       <div key={n} className="flex items-center gap-2 text-sm">
-                        <span className="w-8 shrink-0 tabular-nums">{n} 分</span>
+                        <span className="w-8 shrink-0 tabular-nums">{n}</span>
                         <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: 'color-mix(in srgb, var(--ink) 8%, transparent)' }}>
                           <div className="h-full rounded-full" style={{ width: `${total ? (count / total) * 100 : 0}%`, background: 'var(--accent)' }} />
                         </div>
-                        <span className="w-10 shrink-0 text-right text-xs opacity-60">{count} 条</span>
+                        <span className="w-10 shrink-0 text-right text-xs opacity-60">{t('mood.count', { count })}</span>
                       </div>
                     );
                   })}
                 </div>
               )}
-            <p className="mt-2 text-xs opacity-40">未评分的记录不按零分处理。</p>
+            <p className="mt-2 text-xs opacity-40">{t('mood.hint')}</p>
           </div>
           <div>
-            <h2 className="display mb-2 text-lg">打断原因</h2>
+            <h2 className="display mb-2 text-lg">{t('interruption.title')}</h2>
             {Object.keys(stats.interruptionCounts).length === 0
-              ? <p className="text-sm opacity-50">暂无填写（未填写不等于没有打断）</p>
+              ? <p className="text-sm opacity-50">{t('interruption.empty')}</p>
               : (
                 <ul className="space-y-1.5 text-sm">
                   {Object.entries(stats.interruptionCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
-                    <li key={k} className="flex justify-between"><span>{k}</span><span className="tabular-nums opacity-60">{v} 次</span></li>
+                    <li key={k} className="flex justify-between"><span>{k}</span><span className="tabular-nums opacity-60">{t('interruption.times', { count: v })}</span></li>
                   ))}
                 </ul>
               )}
