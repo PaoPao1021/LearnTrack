@@ -18,7 +18,9 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { StatsResult, CategoryTotals, Category, EntryRecord } from '@learntrack/domain';
-import { ChevronRight, Layers, BarChart3, Clock3, Flame, ListChecks } from 'lucide-react';
+import { ChevronRight, Layers, BarChart3, Clock3, Flame, ListChecks, TrendingUp } from 'lucide-react';
+import { useCountUp } from '../dashboard/InteractiveDurationCards';
+import { soundscape } from '../../services/soundscape';
 
 echarts.use([
   BarChart, HeatmapChart, LineChart, PieChart,
@@ -36,13 +38,14 @@ function cssVar(name: string, fallback: string): string {
 }
 
 function chartPalette() {
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   return {
     accent: cssVar('--accent', '#007aff'),
-    label: cssVar('--chart-label', '#566070'),
-    line: cssVar('--chart-line', 'rgba(23,30,46,0.12)'),
-    grid: cssVar('--chart-grid', 'rgba(23,30,46,0.07)'),
-    prev: cssVar('--chart-label', '#9ca3af'),
-    pieBorder: cssVar('--surface-elevated', '#ffffff'),
+    label: isDark ? '#94a3b8' : '#566070',
+    line: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(23,30,46,0.12)',
+    grid: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(23,30,46,0.07)',
+    prev: isDark ? '#64748b' : '#9ca3af',
+    pieBorder: isDark ? '#1a1f2a' : '#ffffff',
     heat: [0, 1, 2, 3, 4].map((i) => cssVar(`--heat-${i}`, '#40c463')),
   };
 }
@@ -194,8 +197,66 @@ function DrillModal({ title, entries, onClose }: { title: string; entries: Entry
 /** 图表容器的空状态覆盖层：空数据不再只剩空白坐标轴。 */
 function ChartEmpty({ text }: { text: string }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center">
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <p className="text-sm opacity-60">{text}</p>
+    </div>
+  );
+}
+
+function AnalyticsMetricsGrid({
+  stats,
+  deltaPct,
+  streak,
+  span,
+}: {
+  stats: StatsResult;
+  deltaPct: number | null;
+  streak: { current: number; longest: number };
+  span: number;
+}) {
+  const { t, fmtDuration } = useI18n();
+  const animatedTotal = useCountUp(stats.totalSeconds);
+  const animatedCount = useCountUp(stats.entryCount);
+  const animatedCalAvg = useCountUp(stats.avgPerCalendarDaySeconds);
+  const animatedActAvg = useCountUp(stats.avgPerActiveDaySeconds);
+  const animatedCoverage = useCountUp(Math.round(stats.rangeCoverage * 100));
+
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="interactive-stat-card card p-3.5 text-center">
+        <div className="tick-text text-lg font-bold text-[var(--accent)]">{fmtDuration(animatedTotal)}</div>
+        <div className="chart-title mt-1 text-xs text-[var(--text-tertiary)]">
+          {t('metric.total')}
+          {deltaPct != null && (
+            <span className={deltaPct >= 0 ? 'text-emerald-500 font-semibold ml-1' : 'text-rose-500 font-semibold ml-1'}>
+              {deltaPct >= 0 ? `+${deltaPct}%` : `${deltaPct}%`}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="interactive-stat-card card p-3.5 text-center">
+        <div className="tick-text text-lg font-bold text-[var(--ink)]">{animatedCount}</div>
+        <div className="chart-title mt-1 text-xs text-[var(--text-tertiary)]">{t('metric.count')}</div>
+      </div>
+      <div className="interactive-stat-card card p-3.5 text-center">
+        <div className="tick-text text-lg font-bold text-[var(--ink)]">{fmtDuration(animatedCalAvg)}</div>
+        <div className="chart-title mt-1 text-xs text-[var(--text-tertiary)]">{t('metric.calendarAvg', { days: span })}</div>
+      </div>
+      <div className="interactive-stat-card card p-3.5 text-center">
+        <div className="tick-text text-lg font-bold text-[var(--ink)]">{fmtDuration(animatedActAvg)}</div>
+        <div className="chart-title mt-1 text-xs text-[var(--text-tertiary)]">{t('metric.activeAvg', { days: stats.activeDayCount })}</div>
+      </div>
+      <div className="interactive-stat-card card p-3.5 text-center">
+        <div className="tick-text flex items-center justify-center gap-1 text-lg font-bold text-[var(--ink)]">
+          <Flame size={15} className="text-amber-500" />
+          {streak.current}
+        </div>
+        <div className="chart-title mt-1 text-xs text-[var(--text-tertiary)]">{t('metric.streak', { best: streak.longest })}</div>
+      </div>
+      <div className="interactive-stat-card card p-3.5 text-center">
+        <div className="tick-text text-lg font-bold text-[var(--ink)]">{animatedCoverage}%</div>
+        <div className="chart-title mt-1 text-xs text-[var(--text-tertiary)]">{t('metric.coverage')}</div>
+      </div>
     </div>
   );
 }
@@ -226,9 +287,20 @@ export default function Analytics() {
   // 主题切换（深浅色 / 强调色 / 语言）后重绘图表，读取新的调色令牌与文案
   const [themeTick, bumpThemeTick] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
-    const handler = () => bumpThemeTick();
+    const handler = () => {
+      requestAnimationFrame(() => bumpThemeTick());
+    };
     window.addEventListener(THEME_CHANGE_EVENT, handler);
-    return () => window.removeEventListener(THEME_CHANGE_EVENT, handler);
+
+    const observer = new MutationObserver(() => {
+      requestAnimationFrame(() => bumpThemeTick());
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+
+    return () => {
+      window.removeEventListener(THEME_CHANGE_EVENT, handler);
+      observer.disconnect();
+    };
   }, []);
 
   const range = rangeFor(preset, customFrom, customTo);
@@ -310,7 +382,7 @@ export default function Analytics() {
     });
   }, [stats.byDay, prevStats.byDay, majorSeries, prevMajorSeries, gran, lang, themeTick]);
 
-  // 扇形图：双层环，内环大科目，外环具体科目；中心显示总时长，点击下钻原始记录（零值分类不参与渲染）
+  // 扇形图：内层实心圆（大分类），外层加粗圆环（具体科目/活动）；圆盘外部展示总时长与核心指标，点击下钻原始记录（零值分类不参与渲染）
   const pieRef = useChart((chart) => {
     const palette = chartPalette();
     const inner = stats.categories.map((c) => ({ name: catName(c.categoryId), value: c.totalSeconds, id: c.categoryId })).filter((d) => d.value > 0);
@@ -319,32 +391,47 @@ export default function Analytics() {
     ).filter((d) => d.value > 0);
     const colorOf = (id: string) => byId.get(id)?.color;
     chart.setOption({
-      tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${formatDuration(p.value, lang)} (${p.percent}%)` },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: { name: string; value: number; percent: number }) =>
+          `<div style="font-weight:600;margin-bottom:2px">${p.name}</div><div>投入: ${formatDuration(p.value, lang)} (${p.percent}%)</div>`,
+      },
       legend: { bottom: 0, textStyle: { fontSize: 10, color: palette.label }, type: 'scroll' },
       title: {
-        text: fmtDuration(stats.totalSeconds),
-        subtext: t('pie.totalLabel'),
-        left: 'center',
-        top: '40%',
-        textStyle: { fontSize: 18, fontWeight: 700, color: palette.label },
-        subtextStyle: { fontSize: 11, color: palette.label },
-        itemGap: 2,
+        show: false,
       },
       series: [
         {
-          type: 'pie', radius: ['40%', '58%'], label: { show: false },
-          itemStyle: { borderColor: palette.pieBorder, borderWidth: 2, borderRadius: 4 },
-          emphasis: { scaleSize: 6 },
+          name: '核心领域',
+          type: 'pie',
+          radius: [0, '46%'],
+          center: ['50%', '46%'],
+          label: {
+            show: true,
+            position: 'inner',
+            formatter: (p: { percent: number; name: string }) => (p.percent >= 8 ? p.name : ''),
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#ffffff',
+            textShadowColor: 'rgba(0, 0, 0, 0.5)',
+            textShadowBlur: 3,
+          },
+          itemStyle: { borderColor: palette.pieBorder, borderWidth: 2 },
+          emphasis: { scaleSize: 4 },
           data: inner.map((d) => ({ ...d, itemStyle: { color: colorOf(d.id) } })),
         },
         {
-          type: 'pie', radius: ['66%', '80%'], label: { show: false },
+          name: '细分科目',
+          type: 'pie',
+          radius: ['52%', '80%'],
+          center: ['50%', '46%'],
+          label: { show: false },
           itemStyle: { borderColor: palette.pieBorder, borderWidth: 2, borderRadius: 3 },
           emphasis: { scaleSize: 4 },
-          data: outer.map((d) => ({ ...d, itemStyle: { color: colorOf(d.id), opacity: 0.62 } })),
+          data: outer.map((d) => ({ ...d, itemStyle: { color: colorOf(d.id), opacity: 0.85 } })),
         },
       ],
-    });
+    }, true);
     chart.off('click');
     chart.on('click', (p: unknown) => {
       const id = (p as { data?: { id?: string } }).data?.id;
@@ -378,7 +465,12 @@ export default function Analytics() {
   const rankRef = useChart((chart) => {
     const palette = chartPalette();
     chart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => formatDuration(Number(v), lang) },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: { name: string; value: number; marker: string }) => {
+          return `<div style="font-weight:600;margin-bottom:2px">${p.name}</div><div>${p.marker} ${formatDuration(Number(p.value), lang)}</div>`;
+        },
+      },
       grid: { left: 90, right: 52, top: 8, bottom: 8 },
       xAxis: { type: 'value', show: false, splitLine: { show: false } },
       yAxis: {
@@ -390,9 +482,16 @@ export default function Analytics() {
       series: [{
         type: 'bar', barWidth: 12, borderRadius: 6,
         data: ranking.map((r) => ({ value: r.seconds, itemStyle: { color: r.color } })),
+        emphasis: {
+          itemStyle: {
+            opacity: 0.85,
+            shadowBlur: 8,
+            shadowColor: 'rgba(0,0,0,0.15)',
+          },
+        },
         label: { show: true, position: 'right', fontSize: 10, color: palette.label, formatter: (p: { value: number }) => `${(p.value / 3600).toFixed(1)}h` },
       }],
-    });
+    }, true);
   }, [ranking, lang, themeTick]);
 
   // 单次时长分布
@@ -414,12 +513,30 @@ export default function Analytics() {
   const distRef = useChart((chart) => {
     const palette = chartPalette();
     chart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: { name: string; value: number; marker: string }) => {
+          return `<div style="font-weight:600;margin-bottom:2px">单次时长: ${p.name}</div><div>${p.marker} ${p.value} 条记录</div>`;
+        },
+      },
       grid: { left: 40, right: 12, top: 12, bottom: 24 },
       xAxis: { type: 'category', data: durationDist.map((b) => b.label), axisLabel: { fontSize: 10, color: palette.label }, axisLine: { lineStyle: { color: palette.line } } },
       yAxis: { type: 'value', minInterval: 1, splitNumber: 3, axisLabel: { color: palette.label }, splitLine: { lineStyle: { color: palette.grid } } },
-      series: [{ type: 'bar', barWidth: 26, borderRadius: [6, 6, 0, 0], data: durationDist.map((b) => b.count), itemStyle: { color: palette.accent } }],
-    });
+      series: [{
+        type: 'bar',
+        barWidth: 26,
+        borderRadius: [6, 6, 0, 0],
+        data: durationDist.map((b) => b.count),
+        itemStyle: { color: palette.accent },
+        emphasis: {
+          itemStyle: {
+            opacity: 0.85,
+            shadowBlur: 8,
+            shadowColor: 'rgba(0,0,0,0.15)',
+          },
+        },
+      }],
+    }, true);
   }, [durationDist, lang, themeTick]);
 
   const hourRef = useChart((chart) => {
@@ -525,7 +642,10 @@ export default function Analytics() {
           <Segmented
             ariaLabel={t('stats.title')}
             value={preset}
-            onChange={(p) => setParams({ preset: p })}
+            onChange={(p) => {
+              soundscape.playTick();
+              setParams({ preset: p });
+            }}
             options={PRESETS.map((p) => ({ value: p, label: t(`preset.${p}` as MessageKey) }))}
           />
           {preset === 'custom' && (
@@ -544,33 +664,13 @@ export default function Analytics() {
         </div>
       </div>
 
-      {/* 指标卡 */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{fmtDuration(stats.totalSeconds)}</div>
-          <div className="chart-title mt-1">{t('metric.total')}{deltaPct != null && t('metric.prevPct', { pct: `${deltaPct >= 0 ? '+' : ''}${deltaPct}%` })}</div>
-        </div>
-        <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{stats.entryCount}</div>
-          <div className="chart-title mt-1">{t('metric.count')}</div>
-        </div>
-        <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{fmtDuration(stats.avgPerCalendarDaySeconds)}</div>
-          <div className="chart-title mt-1">{t('metric.calendarAvg', { days: span })}</div>
-        </div>
-        <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{fmtDuration(stats.avgPerActiveDaySeconds)}</div>
-          <div className="chart-title mt-1">{t('metric.activeAvg', { days: stats.activeDayCount })}</div>
-        </div>
-        <div className="card p-3.5 text-center">
-          <div className="tick-text flex items-center justify-center gap-1 text-lg font-semibold"><Flame size={15} className="text-orange-500" />{streak.current}</div>
-          <div className="chart-title mt-1">{t('metric.streak', { best: streak.longest })}</div>
-        </div>
-        <div className="card p-3.5 text-center">
-          <div className="tick-text text-lg font-semibold">{Math.round(stats.rangeCoverage * 100)}%</div>
-          <div className="chart-title mt-1">{t('metric.coverage')}</div>
-        </div>
-      </div>
+      {/* 核心指标卡片（支持顺滑数字滚动 + 磁吸微立体质感） */}
+      <AnalyticsMetricsGrid
+        stats={stats}
+        deltaPct={deltaPct}
+        streak={streak}
+        span={span}
+      />
 
       {/* 多科目趋势 */}
       <section className="card p-5">
@@ -602,8 +702,39 @@ export default function Analytics() {
       {/* 扇形图 + 排行 */}
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card p-5">
-          <h2 className="display mb-1 flex items-center gap-2 text-lg"><BarChart3 size={17} /> {t('pie.title')}</h2>
-          <p className="chart-title mb-2">{t('pie.subtitle')}</p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="display flex items-center gap-2 text-lg"><BarChart3 size={17} /> {t('pie.title')}</h2>
+              <p className="chart-title mt-0.5">{t('pie.subtitle')}</p>
+            </div>
+            {stats.totalSeconds > 0 && (
+              <div className="flex items-center gap-1.5 rounded-full border border-[var(--border-soft)] bg-black/[0.03] px-3 py-1 text-xs dark:bg-white/[0.04]">
+                <span className="text-[var(--text-tertiary)]">总投入:</span>
+                <span className="tick-text font-bold text-[var(--accent)]">{fmtDuration(stats.totalSeconds)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* 圆盘外直观统计看板 */}
+          {stats.totalSeconds > 0 && (
+            <div className="mb-3 flex items-center justify-between rounded-xl border border-[var(--border-soft)] bg-black/[0.02] px-3.5 py-2.5 dark:bg-white/[0.03]">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[var(--text-tertiary)]">总学习投入:</span>
+                <span className="tick-text text-base font-extrabold text-[var(--ink)]">
+                  {fmtDuration(stats.totalSeconds)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-[var(--text-secondary)]">
+                <span>{stats.categories.filter((c) => c.totalSeconds > 0).length} 个核心领域</span>
+                {topSubject && topSubject.totalSeconds > 0 && (
+                  <span className="hidden sm:inline border-l border-[var(--border-soft)] pl-3 text-[var(--accent)] font-semibold">
+                    最多: {catName(topSubject.categoryId)}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           <div
             className="relative"
             role="img"
@@ -615,7 +746,7 @@ export default function Analytics() {
             {stats.totalSeconds === 0 && <ChartEmpty text={t('chart.empty')} />}
           </div>
           {topSubject && topSubject.totalSeconds > 0 && (
-            <p className="chart-title text-center">
+            <p className="chart-title text-center mt-2">
               {t('pie.top', { name: catName(topSubject.categoryId), dur: fmtDuration(topSubject.totalSeconds), pct: Math.round(topSubject.share * 100) })}
             </p>
           )}

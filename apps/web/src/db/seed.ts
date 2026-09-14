@@ -82,10 +82,11 @@ export async function ensureSeeded(): Promise<void> {
 }
 
 export async function ensureDeviceId(): Promise<string> {
-  let id = await getSetting<string>(SETTINGS_KEYS.deviceId, '');
-  if (!id) {
-    id = uuid();
+  return db.transaction('rw', db.settings, async () => {
+    const existing = await getSetting<string>(SETTINGS_KEYS.deviceId, '');
+    if (existing) return existing;
+    const id = uuid();
     await setSetting(SETTINGS_KEYS.deviceId, id);
-  }
-  return id;
+    return id;
+  });
 }

@@ -1,6 +1,18 @@
 import { db } from '../db/database';
 import type { Category, EntryRecord, LearningPath, PathItem, ProgressEvent, Todo, Goal, QuickAction } from '@learntrack/domain';
-import { BackupManifest as BackupManifestSchema, CategoryDto, EntryDto } from '@learntrack/contracts';
+import {
+  BackupManifest as BackupManifestSchema,
+  CategoryDto,
+  EntryDto,
+  GoalDto,
+  LearningPathDto,
+  PathItemDto,
+  PendingOpDto,
+  ProgressEventDto,
+  QuickActionDto,
+  SettingDto,
+  TodoDto,
+} from '@learntrack/contracts';
 
 export interface BackupManifest {
   formatVersion: 1;
@@ -47,6 +59,90 @@ const COLLECTIONS = [
   'todos', 'goals', 'quickActions', 'settings', 'pendingOps',
 ] as const;
 
+const COLLECTION_SCHEMAS = {
+  categories: CategoryDto.array(),
+  entries: EntryDto.array(),
+  paths: LearningPathDto.array(),
+  pathItems: PathItemDto.array(),
+  progressEvents: ProgressEventDto.array(),
+  todos: TodoDto.array(),
+  goals: GoalDto.array(),
+  quickActions: QuickActionDto.array(),
+  settings: SettingDto.array(),
+  pendingOps: PendingOpDto.array(),
+} as const;
+
+function validateReferences(data: Record<string, unknown[]>): void {
+  const categories = data.categories as Category[];
+  const entries = data.entries as EntryRecord[];
+  const paths = data.paths as LearningPath[];
+  const pathItems = data.pathItems as PathItem[];
+  const progressEvents = data.progressEvents as ProgressEvent[];
+  const todos = data.todos as Todo[];
+  const goals = data.goals as Goal[];
+  const quickActions = data.quickActions as QuickAction[];
+  const categoriesById = new Map(categories.map((row) => [row.id, row]));
+  const entriesById = new Map(entries.map((row) => [row.id, row]));
+  const pathsById = new Map(paths.map((row) => [row.id, row]));
+  const itemsById = new Map(pathItems.map((row) => [row.id, row]));
+
+  for (const category of categories) {
+    const parent = category.parentId ? categoriesById.get(category.parentId) : undefined;
+    const validParent = category.level === 'major'
+      ? category.parentId == null
+      : category.level === 'subject'
+        ? parent?.level === 'major'
+        : parent?.level === 'subject';
+    if (!validParent) throw new Error('备份中的分类层级引用不合法，已拒绝导入。');
+  }
+  for (const entry of entries) {
+    if (categoriesById.get(entry.activityId)?.level !== 'activity') {
+      throw new Error('备份中的学习记录引用了不存在的活动，已拒绝导入。');
+    }
+    const ranged = entry.method === 'range' || entry.method === 'timer';
+    if (ranged !== (entry.startedAt != null && entry.endedAt != null) ||
+        (ranged && entry.endedAt! <= entry.startedAt!)) {
+      throw new Error('备份中的学习记录时间范围不合法，已拒绝导入。');
+    }
+  }
+  for (const path of paths) {
+    if (categoriesById.get(path.subjectId)?.level !== 'subject') {
+      throw new Error('备份中的学习路线引用了不存在的科目，已拒绝导入。');
+    }
+  }
+  for (const item of pathItems) {
+    const parent = item.parentId ? itemsById.get(item.parentId) : undefined;
+    if (!pathsById.has(item.pathId) || (item.parentId != null && parent?.pathId !== item.pathId)) {
+      throw new Error('备份中的路线项引用不合法，已拒绝导入。');
+    }
+  }
+  for (const event of progressEvents) {
+    const item = event.itemId ? itemsById.get(event.itemId) : undefined;
+    if (!pathsById.has(event.pathId) || (event.itemId != null && item?.pathId !== event.pathId) ||
+        (event.entryId != null && !entriesById.has(event.entryId))) {
+      throw new Error('备份中的进度事件引用不合法，已拒绝导入。');
+    }
+  }
+  for (const todo of todos) {
+    if ((todo.subjectId != null && categoriesById.get(todo.subjectId)?.level !== 'subject') ||
+        (todo.pathId != null && !pathsById.has(todo.pathId)) ||
+        (todo.itemId != null && !itemsById.has(todo.itemId))) {
+      throw new Error('备份中的待办引用不合法，已拒绝导入。');
+    }
+  }
+  for (const goal of goals) {
+    if ((goal.scope === 'all' && goal.subjectId != null) ||
+        (goal.scope === 'subject' && categoriesById.get(goal.subjectId ?? '')?.level !== 'subject')) {
+      throw new Error('备份中的目标范围引用不合法，已拒绝导入。');
+    }
+  }
+  for (const action of quickActions) {
+    if (categoriesById.get(action.activityId)?.level !== 'activity') {
+      throw new Error('备份中的快捷项引用了不存在的活动，已拒绝导入。');
+    }
+  }
+}
+
 function parseBackup(text: string): { manifest: BackupManifest; data: Record<string, unknown[]> } {
   let value: unknown;
   try {
@@ -68,8 +164,10 @@ function parseBackup(text: string): { manifest: BackupManifest; data: Record<str
       throw new Error(`备份 ${key} 计数不一致，已拒绝导入。`);
     }
   }
-  if (!CategoryDto.array().safeParse(data.categories).success || !EntryDto.array().safeParse(data.entries).success) {
-    throw new Error('备份中的分类或记录字段不合法，已拒绝导入。');
+  for (const key of COLLECTIONS) {
+    if (!COLLECTION_SCHEMAS[key].safeParse(data[key]).success) {
+      throw new Error('备份 ' + key + ' 的字段不合法，已拒绝导入。');
+    }
   }
   for (const key of COLLECTIONS) {
     const identity = key === 'settings' ? 'key' : key === 'pendingOps' ? 'opId' : 'id';
@@ -78,6 +176,7 @@ function parseBackup(text: string): { manifest: BackupManifest; data: Record<str
       throw new Error(`备份 ${key} 的标识字段不合法或重复，已拒绝导入。`);
     }
   }
+  validateReferences(data);
   return { manifest: manifestResult.data as BackupManifest, data };
 }
 

@@ -7,7 +7,7 @@
 - `POST /auth/logout`、`GET /auth/session`。
 
 ## sync
-- `POST /sync/push` `{deviceId, lastCursor, ops[]}`；op 由 `opId` 幂等去重（重放只确认不重放效果）；`baseVersion` 落后于服务端版本时进入 `conflicts`，保留双方候选。响应 `{appliedOpIds, conflicts, cursor}`。
+- `POST /sync/push` `{deviceId, lastCursor, ops[]}`；op 由 `opId` 幂等去重（重放只确认不重放效果）；`baseVersion` 必须与服务端当前版本精确一致（新实体为 `null`），否则进入 `conflicts` 并保留双方候选。响应 `{appliedOpIds, conflicts, cursor}`。
 - `GET /sync/pull?cursor=N` → `{cursor, ops[]}`（含删除标记的 tombstone payload）。
 
 ## backups

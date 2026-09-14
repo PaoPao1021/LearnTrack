@@ -25,3 +25,18 @@ export function formatClock(totalSeconds: number): string {
     ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
     : `${m}:${String(sec).padStart(2, '0')}`;
 }
+
+export function parseLocalTimeInTz(v: string, timeZone: string = TZ): number {
+  const asUtc = new Date(`${v}:00Z`);
+  const utcDate = new Date(asUtc.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const tzDate = new Date(asUtc.toLocaleString('en-US', { timeZone }));
+  const offset = tzDate.getTime() - utcDate.getTime();
+  return asUtc.getTime() - offset;
+}
+
+export function shiftDateKey(dateKey: string, daysDelta: number): string {
+  const d = new Date(`${dateKey}T12:00:00`);
+  d.setDate(d.getDate() + daysDelta);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
+}
+

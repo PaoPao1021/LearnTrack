@@ -18,6 +18,7 @@ export interface TimerState {
   /** open pause start (paused state) */
   pausedAt: number | null;
   countdownTargetSeconds: number | null;
+  stopping: boolean;
   lastTickAt: number;
   start: (activityId: string, label: string, countdownSeconds?: number | null) => void;
   pause: () => void;
@@ -39,11 +40,12 @@ function persisted(s: TimerState) {
   };
 }
 
-const STORAGE_KEY = 'learntrack.timer';
+export const TIMER_STORAGE_KEY = 'learntrack.timer';
 
 function loadPersisted(): Partial<TimerState> {
+  if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(TIMER_STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -51,8 +53,9 @@ function loadPersisted(): Partial<TimerState> {
 }
 
 function savePersisted(s: TimerState) {
+  if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted(s)));
+    window.localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(persisted(s)));
   } catch { /* storage full or blocked */ }
 }
 
@@ -73,6 +76,7 @@ export const useTimer = create<TimerState>((set, get) => ({
   pauses: initial.pauses ?? [],
   pausedAt: initial.pausedAt ?? null,
   countdownTargetSeconds: initial.countdownTargetSeconds ?? null,
+  stopping: false,
   lastTickAt: Date.now(),
 
   start: (activityId, label, countdownSeconds = null) => {
@@ -85,6 +89,7 @@ export const useTimer = create<TimerState>((set, get) => ({
       pauses: [],
       pausedAt: null,
       countdownTargetSeconds: countdownSeconds,
+      stopping: false,
       lastTickAt: Date.now(),
     };
     savePersisted(s);
@@ -114,42 +119,50 @@ export const useTimer = create<TimerState>((set, get) => ({
 
   stop: async () => {
     const s = get();
-    if (!s.startedAt || !s.activityId) return null;
+    if (s.stopping || !s.startedAt || !s.activityId) return null;
+    // Set synchronously before the first await so a double click cannot create
+    // two entries from the same running timer.
+    set({ stopping: true });
     const endedAt = s.status === 'paused' && s.pausedAt ? s.pausedAt : Date.now();
     const pauses = [...s.pauses];
     const duration = effectiveSecondsBetween(s.startedAt, endedAt, pauses);
     if (duration <= 0) {
-      const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null };
+      const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null, stopping: false };
       savePersisted(cleared);
       set(cleared);
       return null;
     }
-    const deviceId = await ensureDeviceId();
-    const entry: EntryRecord = {
-      id: uuid(),
-      deviceId,
-      activityId: s.activityId,
-      method: 'timer',
-      learningDate: new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(s.startedAt)),
-      startedAt: s.startedAt,
-      endedAt,
-      timeZone: TZ,
-      durationSeconds: duration,
-      pauseIntervals: pauses,
-      countdownTargetSeconds: s.countdownTargetSeconds,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      deletedAt: null,
-      version: 1,
-    };
-    await db.transaction('rw', db.entries, db.pendingOps, async () => {
-      await db.entries.add(entry);
-      await enqueueOp('entry', entry.id, entry, null, null, deviceId);
-    });
-    const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null };
-    savePersisted(cleared);
-    set(cleared);
-    return entry;
+    try {
+      const deviceId = await ensureDeviceId();
+      const entry: EntryRecord = {
+        id: uuid(),
+        deviceId,
+        activityId: s.activityId,
+        method: 'timer',
+        learningDate: new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(s.startedAt)),
+        startedAt: s.startedAt,
+        endedAt,
+        timeZone: TZ,
+        durationSeconds: duration,
+        pauseIntervals: pauses,
+        countdownTargetSeconds: s.countdownTargetSeconds,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        deletedAt: null,
+        version: 1,
+      };
+      await db.transaction('rw', db.entries, db.pendingOps, async () => {
+        await db.entries.add(entry);
+        await enqueueOp('entry', entry.id, entry, null, null, deviceId);
+      });
+      const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null, stopping: false };
+      savePersisted(cleared);
+      set(cleared);
+      return entry;
+    } catch (error) {
+      set({ stopping: false });
+      throw error;
+    }
   },
 
   switchActivity: async (activityId, label) => {
@@ -162,5 +175,32 @@ export const useTimer = create<TimerState>((set, get) => ({
     get().start(activityId, label);
   },
 
-  tick: () => set({ lastTickAt: Date.now() }),
+  tick: () => {
+    if (get().status === 'running') {
+      set({ lastTickAt: Date.now() });
+    }
+  },
 }));
+
+export function syncFromStorage(data?: Partial<TimerState>): void {
+  const p = data ?? loadPersisted();
+  useTimer.setState({
+    status: (p.status as TimerStatus) ?? 'idle',
+    activityId: p.activityId ?? null,
+    label: p.label ?? '',
+    startedAt: p.startedAt ?? null,
+    pauses: p.pauses ?? [],
+    pausedAt: p.pausedAt ?? null,
+    countdownTargetSeconds: p.countdownTargetSeconds ?? null,
+    stopping: false,
+    lastTickAt: Date.now(),
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === TIMER_STORAGE_KEY) {
+      syncFromStorage();
+    }
+  });
+}

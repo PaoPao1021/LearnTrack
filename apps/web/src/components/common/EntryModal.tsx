@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Modal } from './Modal';
 import { Segmented } from './Segmented';
@@ -6,7 +6,7 @@ import { ActivityCombobox } from './ActivityCombobox';
 import { useActivities } from './useActivities';
 import { useI18n, translateError } from '../../i18n';
 import { saveEntryWithProgress, findOverlaps } from '../../services/commands';
-import { todayKey, TZ } from '../../utils';
+import { todayKey, TZ, parseLocalTimeInTz } from '../../utils';
 import { db } from '../../db/database';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { hoursFromSeconds } from '@learntrack/domain';
@@ -18,8 +18,7 @@ function toLocalInputValue(d: Date): string {
 }
 
 function fromLocalInputValue(v: string): number {
-  // wall time in TZ; Asia/Shanghai has no DST so fixed +08:00 is correct
-  return new Date(`${v}:00+08:00`).getTime();
+  return parseLocalTimeInTz(v, TZ);
 }
 
 export interface EntryModalProps {
@@ -49,6 +48,25 @@ export default function EntryModal({ open, onClose, initialActivityId, initialDa
   const [submitting, setSubmitting] = useState(false);
 
   const paths = useLiveQuery(() => db.paths.filter((p) => !p.deletedAt).toArray(), [], []);
+
+  useEffect(() => {
+    if (!open) return;
+    setMode('duration');
+    setActivityId(initialActivityId ?? '');
+    setDate(initialDate ?? todayKey());
+    setMinutes(30);
+    setStart('09:00');
+    setEnd('10:00');
+    setNote('');
+    setShowExtra(false);
+    setMood('');
+    setInterruption('');
+    setLinkPathId('');
+    setQuantityDelta('');
+    setOverlapWarn(null);
+    setError('');
+    setSubmitting(false);
+  }, [open, initialActivityId, initialDate]);
 
   if (!open) return null;
 

@@ -62,7 +62,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
   };
 
   return (
-    <div ref={rootRef} className={`relative ${className ?? ''}`}>
+    <div ref={rootRef} className={`relative ${open ? 'z-50' : 'z-20'} ${className ?? ''}`}>
       <div className="relative">
         <Search size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 opacity-40" />
         <input
@@ -74,7 +74,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           aria-label={ariaLabel}
           aria-autocomplete="list"
           aria-activedescendant={open && matches.length > 0 ? `${listId}-opt-${active}` : undefined}
-          className="input pl-9 pr-8"
+          className="input !pl-9 !pr-8"
           placeholder={selected ? `${labelOf(selected)} · ${selected.activity.name}` : (placeholder ?? t('combo.placeholder'))}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
@@ -82,7 +82,12 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, matches.length - 1)); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
-            else if (e.key === 'Enter') { e.preventDefault(); const m = matches[active]; if (m) pick(m); }
+            else if (e.key === 'Enter') {
+              if (e.nativeEvent.isComposing) return;
+              e.preventDefault();
+              const m = matches[active];
+              if (m) pick(m);
+            }
             else if (e.key === 'Escape') {
               // 先只收起联想列表；列表已收起时才让事件冒泡去关闭外层对话框
               if (open) e.stopPropagation();
@@ -107,7 +112,13 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           id={listId}
           ref={listRef}
           role="listbox"
-          className="glass-emphasis pop-in absolute z-30 mt-1.5 max-h-64 w-full overflow-y-auto rounded-2xl p-1.5"
+          className="pop-in absolute z-50 mt-1.5 max-h-72 w-full sm:w-80 sm:right-0 sm:left-auto overflow-y-auto rounded-2xl p-1.5 shadow-2xl backdrop-blur-2xl"
+          style={{
+            backgroundColor: 'var(--surface-elevated)',
+            backgroundImage: 'var(--card-sheen)',
+            border: '1px solid var(--border-glass)',
+            boxShadow: '0 20px 45px -10px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border-glass)',
+          }}
         >
           {matches.map((o, i) => {
             const label = `${o.major.name} / ${o.subject.name} / ${o.activity.name}`;
@@ -138,7 +149,16 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
         </ul>
       )}
       {open && query.trim() && matches.length === 0 && (
-        <div className="glass-emphasis pop-in absolute z-30 mt-1.5 w-full rounded-2xl p-4 text-sm opacity-80">
+        <div
+          className="pop-in absolute z-50 mt-1.5 w-full sm:w-80 sm:right-0 sm:left-auto rounded-2xl p-4 text-sm"
+          style={{
+            backgroundColor: 'var(--surface-elevated)',
+            backgroundImage: 'var(--card-sheen)',
+            border: '1px solid var(--border-glass)',
+            boxShadow: 'var(--shadow-overlay)',
+            color: 'var(--text-secondary)',
+          }}
+        >
           {t('combo.noMatch', { query })}
         </div>
       )}

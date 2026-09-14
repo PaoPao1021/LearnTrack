@@ -54,7 +54,7 @@ export function ConflictSection() {
       }
       // 保留本机候选时，以服务端当前版本为基线重新入队；删除候选也必须同步。
       if (pick === 'local') {
-        await enqueueOp(row.entity, row.entityId, payload, row.serverVersion, null, deviceId);
+        await enqueueOp(row.entity, row.entityId, payload, row.serverVersion === 0 ? null : row.serverVersion, null, deviceId);
       }
       await db.conflicts.delete(id);
     });

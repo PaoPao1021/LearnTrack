@@ -91,5 +91,48 @@ describe('LearnTrack API', () => {
     expect(stale.json().conflicts).toEqual([
       expect.objectContaining({ opId: staleOpId, entityId, serverVersion: 1 }),
     ]);
+
+    const futureOpId = crypto.randomUUID();
+    const future = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/push',
+      headers: { cookie },
+      payload: {
+        ...first,
+        ops: [{ ...first.ops[0], opId: futureOpId, baseVersion: 42, payload: { id: entityId, version: 43 } }],
+      },
+    });
+    expect(future.statusCode).toBe(200);
+    expect(future.json().appliedOpIds).toEqual([]);
+    expect(future.json().conflicts).toEqual([
+      expect.objectContaining({ opId: futureOpId, entityId, serverVersion: 1 }),
+    ]);
+    expect((database.prepare('SELECT COUNT(*) AS count FROM sync_ops').get() as { count: number }).count).toBe(1);
+  });
+
+  it('rejects operations whose envelope and payload identities disagree', async () => {
+    const cookie = await loginCookie();
+    const entityId = crypto.randomUUID();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/push',
+      headers: { cookie },
+      payload: {
+        deviceId: 'device-1',
+        lastCursor: 0,
+        ops: [{
+          opId: crypto.randomUUID(),
+          deviceId: 'device-1',
+          entity: 'entry',
+          entityId,
+          baseVersion: null,
+          payload: { id: crypto.randomUUID(), version: 1 },
+          opGroupId: null,
+          clientTimestamp: new Date().toISOString(),
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
   });
 });

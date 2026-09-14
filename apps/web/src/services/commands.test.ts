@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LearningPath } from '@learntrack/domain';
 import { db } from '../db/database';
-import { addQuickAction, removeQuickAction, saveEntryWithProgress } from './commands';
+import { addQuantity, addQuickAction, removeQuickAction, saveEntryWithProgress } from './commands';
 
 const now = '2026-09-10T00:00:00.000Z';
 
@@ -33,6 +33,52 @@ describe('atomic local commands', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ quantityDelta: -2, version: 1 });
     expect(await db.pendingOps.count()).toBe(3);
+  });
+
+  it('serializes concurrent entry progress updates without losing a delta', async () => {
+    const path: LearningPath = {
+      id: crypto.randomUUID(), subjectId: crypto.randomUUID(), name: '题库', mode: 'quantity',
+      totalQuantity: 100, completedQuantity: 0, unit: '题', createdAt: now, updatedAt: now,
+      deletedAt: null, version: 1,
+    };
+    await db.paths.add(path);
+    const input = {
+      activityId: crypto.randomUUID(), method: 'duration' as const, learningDate: '2026-09-10',
+      startedAt: null, endedAt: null, durationSeconds: 60, linkedPathId: path.id, quantityDelta: 1,
+    };
+
+    await Promise.all([saveEntryWithProgress(input), saveEntryWithProgress(input)]);
+
+    expect((await db.paths.get(path.id))?.completedQuantity).toBe(2);
+    expect(await db.progressEvents.count()).toBe(2);
+    expect(await db.entries.count()).toBe(2);
+    expect(await db.pendingOps.count()).toBe(6);
+  });
+
+  it('serializes concurrent quantity changes with their events and outbox writes', async () => {
+    const path: LearningPath = {
+      id: crypto.randomUUID(), subjectId: crypto.randomUUID(), name: '题库', mode: 'quantity',
+      totalQuantity: 100, completedQuantity: 0, unit: '题', createdAt: now, updatedAt: now,
+      deletedAt: null, version: 1,
+    };
+    await db.paths.add(path);
+
+    await Promise.all([addQuantity(path.id, 1), addQuantity(path.id, 1)]);
+
+    expect((await db.paths.get(path.id))?.completedQuantity).toBe(2);
+    expect((await db.progressEvents.toArray()).map((event) => event.quantityDelta)).toEqual([1, 1]);
+    expect(await db.pendingOps.count()).toBe(4);
+  });
+
+  it('deduplicates concurrent quick-action additions', async () => {
+    const activityId = crypto.randomUUID();
+    await Promise.all([
+      addQuickAction(activityId, '高数·习题'),
+      addQuickAction(activityId, '高数·习题'),
+    ]);
+
+    expect(await db.quickActions.where('activityId').equals(activityId).count()).toBe(1);
+    expect(await db.pendingOps.count()).toBe(1);
   });
 
   it('queues a quick-action deletion against its current version', async () => {

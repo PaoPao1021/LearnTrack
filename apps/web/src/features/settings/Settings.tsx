@@ -10,39 +10,161 @@ import { exportFullBackup, restoreBackup, inspectBackup, exportCsv, downloadBlob
 import { login, logout, readSyncState, setServerUrl, syncNow, healthCheck, getServerUrl, checkSession } from '../../services/sync';
 import type { Category } from '@learntrack/domain';
 import { ConflictSection } from './ConflictSection';
+import { soundscape } from '../../services/soundscape';
+import { Sun, Moon, Clock, Sparkles } from 'lucide-react';
 
 function ThemeSection() {
   const { t } = useI18n();
-  const { theme, setTheme, accent, setAccent, ACCENT_PRESETS } = useTheme();
+  const {
+    theme,
+    setTheme,
+    accent,
+    setAccent,
+    ACCENT_PRESETS,
+    scheduleEnabled,
+    setScheduleEnabled,
+    scheduleStart,
+    setScheduleStart,
+    scheduleEnd,
+    setScheduleEnd,
+    isDarkEffective,
+  } = useTheme();
+
   return (
-    <div className="card p-4">
-      <h2 className="display mb-3 text-xl">{t('theme.cardTitle')}</h2>
-      <div className="mb-3">
+    <div className="card p-5 space-y-5">
+      <div>
+        <div className="flex items-center justify-between">
+          <h2 className="display text-xl">{t('theme.cardTitle')}</h2>
+          <span className="mono text-xs px-2.5 py-1 rounded-full border border-[var(--border-soft)] bg-black/[0.02] dark:bg-white/[0.04]">
+            {isDarkEffective ? '🌙 当前深色模式' : '☀️ 当前浅色模式'}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+          选择全局色彩基调，或配置时段定时自动开启深色护眼
+        </p>
+      </div>
+
+      <div>
+        <div className="label mb-2">基础色彩基调</div>
         <Segmented
           ariaLabel={t('theme.cardTitle')}
           value={theme as 'light' | 'dark' | 'system'}
-          onChange={setTheme}
+          onChange={(val) => {
+            soundscape.playTick();
+            setTheme(val);
+          }}
           options={[
             { value: 'light', label: t('theme.light') },
             { value: 'dark', label: t('theme.dark') },
             { value: 'system', label: t('theme.system') },
           ] as const}
         />
+        {scheduleEnabled && (
+          <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+            提示：当前已启用「定时时段切换」，基调将优先遵循夜间定时规则生效。
+          </p>
+        )}
       </div>
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-slate-500 dark:text-slate-400">{t('theme.accentLabel')}</span>
-        {ACCENT_PRESETS.map((c) => (
+
+      <div className="border-t border-[var(--border-soft)] pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Clock size={16} className="text-[var(--accent)]" />
+            <div>
+              <div className="text-sm font-semibold text-[var(--ink)]">按时段定时自动切换</div>
+              <div className="text-xs text-[var(--text-tertiary)]">
+                在设定的夜间时段自动开启深色护眼模式，其余时间恢复浅色模式
+              </div>
+            </div>
+          </div>
           <button
-            key={c}
-            className={`h-8 w-8 rounded-full ring-2 ring-offset-2 transition-transform hover:scale-110 dark:ring-offset-slate-900 ${accent === c ? 'ring-slate-400' : 'ring-transparent'}`}
-            style={{ background: c }}
-            onClick={() => setAccent(c)}
-            aria-label={t('theme.accentAria', { color: c })}
-          />
-        ))}
-        <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-8 w-10 cursor-pointer rounded" aria-label={t('theme.customAria')} />
+            type="button"
+            onClick={() => {
+              soundscape.playPop();
+              setScheduleEnabled(!scheduleEnabled);
+            }}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              scheduleEnabled ? 'bg-[var(--accent)]' : 'bg-slate-300 dark:bg-slate-700'
+            }`}
+            role="switch"
+            aria-checked={scheduleEnabled}
+            aria-label="按时段定时自动切换"
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                scheduleEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {scheduleEnabled && (
+          <div className="mt-3 rounded-2xl border border-[var(--border-soft)] bg-black/[0.02] p-4 dark:bg-white/[0.02] space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-[var(--text-secondary)] mb-1 flex items-center gap-1.5">
+                  <Moon size={13} className="text-indigo-400" />
+                  <span>深色护眼模式起始</span>
+                </label>
+                <input
+                  type="time"
+                  value={scheduleStart}
+                  onChange={(e) => {
+                    soundscape.playTick();
+                    setScheduleStart(e.target.value);
+                  }}
+                  className="input h-10 w-full"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-secondary)] mb-1 flex items-center gap-1.5">
+                  <Sun size={13} className="text-amber-500" />
+                  <span>浅色日间模式恢复</span>
+                </label>
+                <input
+                  type="time"
+                  value={scheduleEnd}
+                  onChange={(e) => {
+                    soundscape.playTick();
+                    setScheduleEnd(e.target.value);
+                  }}
+                  className="input h-10 w-full"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)] pt-1">
+              <Sparkles size={13} className="text-[var(--accent)]" />
+              <span>当前策略：每日 {scheduleStart} 至 次日 {scheduleEnd} 自动深色，现已{isDarkEffective ? '激活深色' : '处于浅色时段'}</span>
+            </div>
+          </div>
+        )}
       </div>
-      <p className="mt-2 text-xs text-slate-400">{t('theme.customHint')}</p>
+
+      <div className="border-t border-[var(--border-soft)] pt-4">
+        <div className="label mb-2">{t('theme.accentLabel')}</div>
+        <div className="flex flex-wrap items-center gap-3">
+          {ACCENT_PRESETS.map((c) => (
+            <button
+              key={c}
+              className={`h-8 w-8 rounded-full ring-2 ring-offset-2 transition-transform hover:scale-110 dark:ring-offset-slate-900 ${accent === c ? 'ring-slate-400' : 'ring-transparent'}`}
+              style={{ background: c }}
+              onClick={() => {
+                soundscape.playTick();
+                setAccent(c);
+              }}
+              aria-label={t('theme.accentAria', { color: c })}
+            />
+          ))}
+          <input
+            type="color"
+            value={accent}
+            onChange={(e) => setAccent(e.target.value)}
+            className="h-8 w-10 cursor-pointer rounded bg-transparent"
+            aria-label={t('theme.customAria')}
+          />
+        </div>
+        <p className="mt-2 text-xs text-slate-400">{t('theme.customHint')}</p>
+      </div>
     </div>
   );
 }
@@ -64,6 +186,45 @@ function LanguageSection() {
     </div>
   );
 }
+
+function SfxSection() {
+  const [sfx, setSfx] = useState(soundscape.isSfxEnabled());
+
+  const toggle = () => {
+    const next = !sfx;
+    setSfx(next);
+    soundscape.setSfxEnabled(next);
+    if (next) soundscape.playPop();
+  };
+
+  return (
+    <div className="card p-4">
+      <h2 className="display mb-1 text-xl">交互触感与音效</h2>
+      <p className="text-xs text-[var(--text-tertiary)] mb-3">
+        启用基于原生 Web Audio 的微触感反馈（计时开始/暂停、任务完成、模式切换提示音）
+      </p>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">按键与打卡提示音</span>
+        <button
+          type="button"
+          onClick={toggle}
+          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+            sfx ? 'bg-[var(--accent)]' : 'bg-slate-300 dark:bg-slate-700'
+          }`}
+          role="switch"
+          aria-checked={sfx}
+        >
+          <span
+            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+              sfx ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 function CategorySection() {
   const { t } = useI18n();
@@ -183,7 +344,13 @@ function RenameCategoryDialog({ initial, onClose, onSubmit }: {
         maxLength={60}
         autoFocus
         onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void submit(); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            if (e.nativeEvent.isComposing) return;
+            e.preventDefault();
+            void submit();
+          }
+        }}
       />
       <div className="flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose} disabled={busy}>{t('common.cancel')}</button>
@@ -328,6 +495,7 @@ export default function Settings() {
       <ConflictSection />
       <ThemeSection />
       <LanguageSection />
+      <SfxSection />
       <CategorySection />
       <SyncSection />
       <BackupSection />

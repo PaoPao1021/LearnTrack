@@ -5,7 +5,7 @@ import { formatDuration } from '@learntrack/domain';
 export type Lang = 'zh' | 'en';
 export type Vars = Record<string, string | number>;
 
-const STORAGE_KEY = 'learntrack.lang';
+const STORAGE_KEY = 'learntrack.lang_v2';
 
 const zh = {
   // 通用
@@ -354,6 +354,39 @@ const zh = {
   'err.durationPositive': '学习时长必须大于 0',
   'err.quantityInteger': '进度增量必须是整数',
   'err.generic': '保存失败，请重试',
+  // 专注模式 (Zen Mode)
+  'zen.title': '专注模式',
+  'zen.subtitle': '远离干扰，沉浸当下',
+  'zen.enter': '专注模式',
+  'zen.exit': '退出专注',
+  'zen.escHint': '按 Esc 或点击退出',
+  // 计时预设
+  'timer.presetCountUp': '正计时',
+  'timer.preset15': '15m',
+  'timer.presetPomodoro': '25m 番茄',
+  'timer.presetDeep': '45m 深度',
+  'timer.presetSprint': '60m 冲刺',
+  'timer.presetExam': '90m 模拟',
+  // 记录折叠与展开
+  'entries.collapseAll': '全部折叠',
+  'entries.expandAll': '全部展开',
+  // 空状态文案
+  'empty.noRecords': '还没有记录',
+  'empty.noFilterResults': '未找到匹配的记录',
+  'empty.clearFilter': '清除筛选',
+  'empty.noQuickActions': '还没有快捷项',
+  'empty.noTodos': '今天没有安排待办',
+  'empty.addTodoHint': '在学习路线中添加或安排今日任务',
+  'empty.noPaths': '还没有学习路线',
+  'empty.createFirstPath': '创建学习路线',
+  'path.parsedCount': '已解析 {count} 个章节',
+  // 区块小标签
+  'label.focus': '专注计时',
+  'label.quickCapture': '快捷记录',
+  'label.agenda': '今日待办',
+  'label.logged': '时长统计',
+  'label.routes': '路线进度',
+  'label.goals': '目标进度',
 };
 
 export type MessageKey = keyof typeof zh;
@@ -688,6 +721,39 @@ const en: Record<MessageKey, string> = {
   'err.durationPositive': 'Study duration must be greater than 0',
   'err.quantityInteger': 'Quantity must be an integer',
   'err.generic': 'Save failed — please try again',
+  // Zen Mode
+  'zen.title': 'Focus Mode',
+  'zen.subtitle': 'Stay present, one breath at a time',
+  'zen.enter': 'Zen Mode',
+  'zen.exit': 'Exit Zen',
+  'zen.escHint': 'Press Esc or click to exit',
+  // Timer presets
+  'timer.presetCountUp': 'Count-up',
+  'timer.preset15': '15m',
+  'timer.presetPomodoro': '25m Pomodoro',
+  'timer.presetDeep': '45m Deep',
+  'timer.presetSprint': '60m Sprint',
+  'timer.presetExam': '90m Exam',
+  // Entries collapse
+  'entries.collapseAll': 'Collapse all',
+  'entries.expandAll': 'Expand all',
+  // Empty states
+  'empty.noRecords': 'No records yet',
+  'empty.noFilterResults': 'No matching records found',
+  'empty.clearFilter': 'Clear filters',
+  'empty.noQuickActions': 'No quick actions yet',
+  'empty.noTodos': 'No todos scheduled for today',
+  'empty.addTodoHint': 'Schedule todos or check off path items',
+  'empty.noPaths': 'No learning paths yet',
+  'empty.createFirstPath': 'Create learning path',
+  'path.parsedCount': '{count} chapters parsed',
+  // Section labels
+  'label.focus': 'Focus Session',
+  'label.quickCapture': 'Quick Capture',
+  'label.agenda': 'Agenda',
+  'label.logged': 'Logged',
+  'label.routes': 'Routes',
+  'label.goals': 'Goals',
 };
 
 const dictionaries: Record<Lang, Record<MessageKey, string>> = { zh, en };
@@ -697,7 +763,7 @@ function initialLang(): Lang {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'zh' || stored === 'en') return stored;
   } catch { /* storage blocked */ }
-  return typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  return 'zh';
 }
 
 interface I18nValue {

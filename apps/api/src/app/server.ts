@@ -13,9 +13,13 @@ import { SyncPushRequest, LoginRequest } from '@learntrack/contracts';
 import { makeBackup } from './backups.js';
 
 export function buildServer(db: InstanceType<typeof DatabaseSync>) {
-  const app = Fastify({ logger: { level: process.env.LT_LOG_LEVEL ?? 'info' } });
+  const app = Fastify({
+    logger: { level: process.env.LT_LOG_LEVEL ?? 'info' },
+    trustProxy: process.env.LT_TRUST_PROXY === 'false' ? false : true,
+  });
   void app.register(cookie);
   // Serve the built web app from the same origin (single-site deployment)
+  const webDistIndex = path.resolve(import.meta.dirname, '../../../web/dist/index.html');
   void app.register(fastifyStatic, {
     root: path.resolve(import.meta.dirname, '../../../web/dist'),
     prefix: '/',
@@ -25,9 +29,9 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
   // SPA history fallback: serve index.html for client-side routes
   app.setNotFoundHandler((request, reply) => {
     if (request.method === 'GET' && !request.url.startsWith('/api/')) {
-      return void reply.type('text/html').send(fs.readFileSync(
-        path.resolve(import.meta.dirname, '../../../web/dist/index.html'),
-      ));
+      if (fs.existsSync(webDistIndex)) {
+        return void reply.type('text/html').send(fs.readFileSync(webDistIndex));
+      }
     }
     return void reply.code(404).send({ error: 'Not Found' });
   });
@@ -86,6 +90,17 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
     const parsed = SyncPushRequest.safeParse(request.body);
     if (!parsed.success) return void reply.code(400).send({ error: '同步请求格式不正确', detail: parsed.error.flatten() });
     const { deviceId, ops } = parsed.data;
+    const malformedOp = ops.find((op) => {
+      if (op.deviceId !== deviceId) return true;
+      if (op.payload == null) return false;
+      if (typeof op.payload !== 'object' || Array.isArray(op.payload)) return true;
+      const payload = op.payload as Record<string, unknown>;
+      if (op.entity === 'settings') return payload['key'] !== op.entityId;
+      return payload['id'] !== op.entityId;
+    });
+    if (malformedOp) {
+      return void reply.code(400).send({ error: '同步操作的设备或实体标识不一致' });
+    }
     const appliedOpIds: string[] = [];
     const conflicts: { opId: string; entity: string; entityId: string; serverVersion: number; serverPayload: unknown }[] = [];
 
@@ -102,8 +117,7 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
     db.exec('BEGIN');
     try {
       for (const op of ops) {
-        const payloadStr = op.payload == null ? null : JSON.stringify(op.payload);
-        const deleted = payloadStr == null || ((op.payload as { deletedAt?: string | null } | null)?.deletedAt != null);
+        const deleted = op.payload == null || ((op.payload as { deletedAt?: string | null } | null)?.deletedAt != null);
         const existingOp = db.prepare('SELECT seq FROM sync_ops WHERE op_id = ?').get(op.opId);
         if (existingOp) {
           // idempotent replay: same op already applied once
@@ -112,8 +126,10 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
         }
         const ver = getVersion.get(op.entity, op.entityId) as { version: number; deleted: number } | undefined;
         const serverVersion = ver?.version ?? 0;
-        // baseVersion 缺失视为未读过服务端版本，同样进入冲突，不允许静默覆盖
-        if (serverVersion > 0 && (op.baseVersion == null || op.baseVersion < serverVersion)) {
+        // Optimistic locking requires an exact base version. Accepting a future
+        // baseVersion would let a corrupt client bypass conflict detection.
+        const expectedBaseVersion = serverVersion === 0 ? null : serverVersion;
+        if (op.baseVersion !== expectedBaseVersion) {
           const serverRow = db.prepare(
             'SELECT payload FROM sync_ops WHERE entity = ? AND entity_id = ? ORDER BY seq DESC LIMIT 1',
           ).get(op.entity, op.entityId) as { payload: string | null } | undefined;
@@ -124,11 +140,17 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
           });
           continue;
         }
+        const nextVersion = serverVersion + 1;
+        // The server owns the authoritative version. Normalizing it here keeps a
+        // malformed client payload from poisoning every device that pulls it.
+        const authoritativePayload = op.payload != null && op.entity !== 'settings'
+          ? { ...(op.payload as Record<string, unknown>), version: nextVersion }
+          : op.payload;
+        const payloadStr = authoritativePayload == null ? null : JSON.stringify(authoritativePayload);
         insertOp.run(
           op.opId, deviceId, op.entity, op.entityId, op.baseVersion,
           payloadStr, op.opGroupId, op.clientTimestamp, new Date().toISOString(),
         );
-        const nextVersion = Math.max(serverVersion, op.baseVersion ?? 0) + 1;
         upsertVersion.run(op.entity, op.entityId, nextVersion, deleted ? 1 : 0);
         appliedOpIds.push(op.opId);
       }
@@ -177,8 +199,6 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
   app.get('/api/v1/backups/:name', async (request, reply) => {
     const { name } = request.params as { name: string };
     if (!/^learntrack-backup-[\w.-]+\.zip$/.test(name)) return void reply.code(400).send({ error: '非法备份文件名' });
-    const fs = await import('node:fs');
-    const path = await import('node:path');
     const file = path.join(config.backupDir, name);
     if (!fs.existsSync(file)) return void reply.code(404).send({ error: '备份不存在' });
     return reply.type('application/zip').send(fs.createReadStream(file));

@@ -1,7 +1,10 @@
 import { FormEvent, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Route, Check, Sparkles } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
+import { soundscape } from '../../services/soundscape';
+import { showToast } from '../../components/common/Toast';
+import { EmptyState } from '../../components/common/EmptyState';
 import { Modal } from '../../components/common/Modal';
 import { Segmented } from '../../components/common/Segmented';
 import { useI18n, translateError } from '../../i18n';
@@ -83,7 +86,14 @@ function CreatePathForm({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <div className="mb-3">
-            <label className="label" htmlFor="path-items">{t('path.itemsLabel')}</label>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="label mb-0" htmlFor="path-items">{t('path.itemsLabel')}</label>
+              {itemsText.split('\n').map((s) => s.trim()).filter(Boolean).length > 0 && (
+                <span className="tick-text text-xs text-blue-600 dark:text-blue-400 font-medium">
+                  {t('path.parsedCount', { count: itemsText.split('\n').map((s) => s.trim()).filter(Boolean).length })}
+                </span>
+              )}
+            </div>
             <textarea id="path-items" className="input h-32" value={itemsText} onChange={(e) => setItemsText(e.target.value)} placeholder={t('path.itemsPlaceholder')} />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('path.itemsHint')}</p>
           </div>
@@ -124,38 +134,83 @@ function PathCard({ path }: { path: LearningPath }) {
         </div>
         <button className="btn-danger px-3 py-2 text-xs" onClick={() => { if (confirm(t('path.deleteConfirm'))) void deletePath(path.id); }}>{t('common.delete')}</button>
       </div>
-      <div className="mb-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <div className="h-full rounded-full" style={{ width: `${progress.ratio * 100}%`, background: 'var(--accent)' }} />
+      <div className="mb-3 h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
+        <div
+          className="h-full rounded-full transition-all duration-500 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)]"
+          style={{ width: `${Math.min(100, progress.ratio * 100)}%`, background: 'var(--accent)' }}
+        />
       </div>
       {path.mode === 'quantity' ? (
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="w-28">
-            <label className="sr-only" htmlFor={`path-delta-${path.id}`}>{t('path.deltaLabel', { unit: path.unit ?? unitFallback })}</label>
-            <input id={`path-delta-${path.id}`} type="number" className="input" placeholder={`+${path.unit ?? ''}`} value={addDelta} onChange={(e) => setAddDelta(e.target.value === '' ? '' : Number(e.target.value))} />
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-28">
+              <label className="sr-only" htmlFor={`path-delta-${path.id}`}>{t('path.deltaLabel', { unit: path.unit ?? unitFallback })}</label>
+              <input id={`path-delta-${path.id}`} type="number" className="input" placeholder={`+${path.unit ?? ''}`} value={addDelta} onChange={(e) => setAddDelta(e.target.value === '' ? '' : Number(e.target.value))} />
+            </div>
+            <button className="btn-ghost" onClick={() => {
+              if (addDelta === '' || addDelta === 0 || !Number.isInteger(addDelta)) return;
+              const next = (path.completedQuantity ?? 0) + (addDelta as number);
+              if (path.totalQuantity && next > path.totalQuantity && !confirm(t('path.exceedConfirm'))) return;
+              soundscape.playPop();
+              void addQuantity(path.id, addDelta as number);
+              showToast(`路线【${path.name}】已打卡 +${addDelta}`, 'success');
+              setAddDelta('');
+            }}>{t('path.update')}</button>
+            {progress.exceedsTarget && <span className="text-xs text-amber-600 dark:text-amber-400">{t('path.exceeds')}</span>}
           </div>
-          <button className="btn-ghost" onClick={() => {
-            if (addDelta === '' || addDelta === 0 || !Number.isInteger(addDelta)) return;
-            const next = (path.completedQuantity ?? 0) + (addDelta as number);
-            if (path.totalQuantity && next > path.totalQuantity && !confirm(t('path.exceedConfirm'))) return;
-            void addQuantity(path.id, addDelta as number);
-            setAddDelta('');
-          }}>{t('path.update')}</button>
-          {progress.exceedsTarget && <span className="text-xs text-amber-600 dark:text-amber-400">{t('path.exceeds')}</span>}
+
+          {/* 快捷增量胶囊 */}
+          <div className="flex items-center gap-1.5 pt-1">
+            <span className="text-[11px] text-[var(--text-tertiary)]">快捷打卡:</span>
+            {[1, 5, 10].map((step) => (
+              <button
+                key={step}
+                type="button"
+                onClick={() => {
+                  soundscape.playPop();
+                  void addQuantity(path.id, step);
+                  showToast(`【${path.name}】+${step} ${path.unit ?? unitFallback}`, 'success');
+                }}
+                className="btn-ghost px-2.5 py-0.5 text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-transform"
+              >
+                +{step}
+              </button>
+            ))}
+          </div>
         </div>
       ) : (
         <>
-          <ul className="mb-3 max-h-64 space-y-1 overflow-y-auto">
+          <ul className="mb-3 max-h-64 space-y-1.5 overflow-y-auto pr-1">
             {(items ?? []).sort((a, b) => a.sortOrder - b.sortOrder).map((i) => (
-              <li key={i.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-[var(--accent)]"
-                  checked={i.done}
-                  onChange={() => void setItemDone(i, !i.done)}
-                  aria-label={i.done ? t('path.itemUndone', { title: i.title }) : t('path.itemDone', { title: i.title })}
-                />
-                <span className={i.done ? 'text-slate-400 line-through' : ''}>{i.title}</span>
-                {i.parentId && <span className="text-xs text-slate-400">{t('path.subsection')}</span>}
+              <li
+                key={i.id}
+                className="group flex items-center justify-between gap-2 rounded-xl p-1.5 text-sm transition-all duration-150 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!i.done) {
+                        soundscape.playPop();
+                        showToast(`已完成章节：${i.title}`, 'success');
+                      } else {
+                        soundscape.playTick();
+                      }
+                      void setItemDone(i, !i.done);
+                    }}
+                    className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-md border transition-all duration-200 hover:scale-110 active:scale-90 ${
+                      i.done
+                        ? 'border-transparent bg-[var(--accent)] text-white shadow-xs'
+                        : 'border-[var(--border-soft)] bg-white/60 dark:bg-white/5 hover:border-[var(--accent)]'
+                    }`}
+                  >
+                    {i.done ? <Check size={11} strokeWidth={3} /> : null}
+                  </button>
+                  <span className={i.done ? 'text-[var(--text-tertiary)] line-through' : 'text-[var(--ink)]'}>
+                    {i.title}
+                  </span>
+                </div>
+                {i.parentId && <span className="text-[10px] text-[var(--text-tertiary)] opacity-60">{t('path.subsection')}</span>}
               </li>
             ))}
             {(items ?? []).length === 0 && <li className="text-sm text-slate-500">{t('path.noChapters')}</li>}
@@ -164,9 +219,15 @@ function PathCard({ path }: { path: LearningPath }) {
             <label className="sr-only" htmlFor={`path-add-item-${path.id}`}>{t('path.addChapterLabel')}</label>
             <input id={`path-add-item-${path.id}`} className="input" placeholder={t('path.addChapter')} value={addItem} onChange={(e) => setAddItem(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && addItem.trim()) {
-                  void addPathItems(path.id, [addItem.trim()]);
-                  setAddItem('');
+                if (e.key === 'Enter') {
+                  if (e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  if (addItem.trim()) {
+                    soundscape.playPop();
+                    void addPathItems(path.id, [addItem.trim()]);
+                    showToast(`已添加章节：${addItem.trim()}`, 'info');
+                    setAddItem('');
+                  }
                 }
               }} />
           </div>
@@ -206,7 +267,7 @@ function TodoSection() {
           <li key={td.id} className="flex items-center gap-2">
             <input
               type="checkbox"
-              className="h-5 w-5 accent-[var(--accent)]"
+              className="checkbox-bounce h-5 w-5 accent-[var(--accent)] cursor-pointer"
               checked={td.done}
               onChange={() => void toggleTodo(td)}
               aria-label={td.done ? t('todo.undoneAria', { title: td.title }) : t('todo.doneAria', { title: td.title })}
@@ -273,9 +334,15 @@ export default function Learning() {
       </div>
 
       {(paths ?? []).length === 0 && (
-        <div className="card p-6 text-center text-sm text-slate-500 dark:text-slate-400">
-          {t('learn.empty')}
-        </div>
+        <EmptyState
+          icon={<Route size={20} />}
+          title={t('empty.noPaths')}
+          description={t('learn.empty')}
+          action={{
+            label: t('learn.new'),
+            onClick: () => setCreating(true),
+          }}
+        />
       )}
 
       <div className="grid gap-4 md:grid-cols-2">

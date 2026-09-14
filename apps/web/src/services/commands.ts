@@ -61,25 +61,29 @@ export async function saveEntryWithProgress(
     version: 1,
   };
 
-  let progress: ProgressEvent | null = null;
   if (input.linkedPathId && input.quantityDelta) {
-    const path = await db.paths.get(input.linkedPathId);
-    if (path && path.mode === 'quantity') {
-      const opId = uuid2();
+    const quantityDelta = input.quantityDelta;
+    await db.transaction('rw', db.entries, db.paths, db.progressEvents, db.pendingOps, async () => {
+      // Read the path inside the write transaction. Otherwise two concurrent
+      // entries can both derive their update from the same completed quantity.
+      const path = await db.paths.get(input.linkedPathId!);
+      if (!path || path.mode !== 'quantity') {
+        await db.entries.add(entry);
+        await enqueueOp('entry', entry.id, entry, null, null, deviceId);
+        return;
+      }
       const previousCompleted = path.completedQuantity ?? 0;
-      const newCompleted = Math.max(0, previousCompleted + input.quantityDelta);
+      const newCompleted = Math.max(0, previousCompleted + quantityDelta);
       const appliedDelta = newCompleted - previousCompleted;
+      await db.entries.add(entry);
       if (appliedDelta === 0) {
-        await db.transaction('rw', db.entries, db.pendingOps, async () => {
-          await db.entries.add(entry);
-          await enqueueOp('entry', entry.id, entry, null, null, deviceId);
-        });
-        return { entry, overlapCount };
+        await enqueueOp('entry', entry.id, entry, null, null, deviceId);
+        return;
       }
       const updated: LearningPath = { ...path, completedQuantity: newCompleted, updatedAt: nowIso(), version: bumpVersion(path.version) };
-      progress = {
+      const progress: ProgressEvent = {
         id: uuid2(),
-        opId,
+        opId: uuid2(),
         pathId: path.id,
         itemId: null,
         quantityDelta: appliedDelta,
@@ -89,17 +93,14 @@ export async function saveEntryWithProgress(
         createdAt: nowIso(),
         version: 1,
       };
-      await db.transaction('rw', db.entries, db.paths, db.progressEvents, db.pendingOps, async () => {
-        await db.entries.add(entry);
-        await db.paths.put(updated);
-        if (progress!) await db.progressEvents.add(progress!);
-        const groupId = uuid2();
-        await enqueueOp('entry', entry.id, entry, null, groupId, deviceId);
-        await enqueueOp('path', updated.id, updated, path.version, groupId, deviceId);
-        await enqueueOp('progressEvent', progress!.id, progress, null, groupId, deviceId);
-      });
-      return { entry, overlapCount };
-    }
+      await db.paths.put(updated);
+      await db.progressEvents.add(progress);
+      const groupId = uuid2();
+      await enqueueOp('entry', entry.id, entry, null, groupId, deviceId);
+      await enqueueOp('path', updated.id, updated, path.version, groupId, deviceId);
+      await enqueueOp('progressEvent', progress.id, progress, null, groupId, deviceId);
+    });
+    return { entry, overlapCount };
   }
 
   await db.transaction('rw', db.entries, db.pendingOps, async () => {
@@ -220,16 +221,16 @@ export async function createPath(input: {
 
 export async function addPathItems(pathId: string, titles: string[]): Promise<void> {
   const deviceId = await ensureDeviceId();
-  const path = await db.paths.get(pathId);
-  if (!path) return;
-  const existing = await db.pathItems.where('pathId').equals(pathId).filter((i) => !i.deletedAt).toArray();
-  let order = existing.length;
-  const rows: PathItem[] = titles.map((t) => ({
-    id: uuid2(), pathId, parentId: null, title: t, sortOrder: order++,
-    done: false, createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
-  }));
-  const groupId = uuid2();
-  await db.transaction('rw', db.pathItems, db.pendingOps, async () => {
+  await db.transaction('rw', db.paths, db.pathItems, db.pendingOps, async () => {
+    const path = await db.paths.get(pathId);
+    if (!path) return;
+    const existing = await db.pathItems.where('pathId').equals(pathId).filter((i) => !i.deletedAt).toArray();
+    let order = existing.length;
+    const rows: PathItem[] = titles.map((t) => ({
+      id: uuid2(), pathId, parentId: null, title: t, sortOrder: order++,
+      done: false, createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
+    }));
+    const groupId = uuid2();
     await db.pathItems.bulkAdd(rows);
     for (const r of rows) await enqueueOp('pathItem', r.id, r, null, groupId, deviceId);
   });
@@ -237,17 +238,19 @@ export async function addPathItems(pathId: string, titles: string[]): Promise<vo
 
 export async function setItemDone(item: PathItem, done: boolean): Promise<void> {
   const deviceId = await ensureDeviceId();
-  const updated: PathItem = { ...item, done, updatedAt: nowIso(), version: bumpVersion(item.version) };
-  const event: ProgressEvent = {
-    id: uuid2(), opId: uuid2(), pathId: item.pathId, itemId: item.id,
-    quantityDelta: null, itemDone: done, entryId: null, undoneAt: null, createdAt: nowIso(),
-    version: 1,
-  };
-  const groupId = uuid2();
   await db.transaction('rw', db.pathItems, db.progressEvents, db.pendingOps, async () => {
+    const current = await db.pathItems.get(item.id);
+    if (!current || current.done === done) return;
+    const updated: PathItem = { ...current, done, updatedAt: nowIso(), version: bumpVersion(current.version) };
+    const event: ProgressEvent = {
+      id: uuid2(), opId: uuid2(), pathId: current.pathId, itemId: current.id,
+      quantityDelta: null, itemDone: done, entryId: null, undoneAt: null, createdAt: nowIso(),
+      version: 1,
+    };
+    const groupId = uuid2();
     await db.pathItems.put(updated);
     await db.progressEvents.add(event);
-    await enqueueOp('pathItem', item.id, updated, item.version, groupId, deviceId);
+    await enqueueOp('pathItem', current.id, updated, current.version, groupId, deviceId);
     await enqueueOp('progressEvent', event.id, event, null, groupId, deviceId);
   });
 }
@@ -255,21 +258,20 @@ export async function setItemDone(item: PathItem, done: boolean): Promise<void> 
 export async function addQuantity(pathId: string, delta: number): Promise<void> {
   if (!Number.isInteger(delta)) throw new AppError('err.quantityInteger');
   const deviceId = await ensureDeviceId();
-  const path = await db.paths.get(pathId);
-  if (!path) return;
-  const previous = path.completedQuantity ?? 0;
-  const next = Math.max(0, previous + delta);
-  const appliedDelta = next - previous;
-  if (appliedDelta === 0) return;
-  const updated: LearningPath = { ...path, completedQuantity: next, updatedAt: nowIso(), version: bumpVersion(path.version) };
-  await db.paths.put(updated);
-  const event: ProgressEvent = {
-    id: uuid2(), opId: uuid2(), pathId, itemId: null,
-    quantityDelta: appliedDelta, itemDone: null, entryId: null, undoneAt: null, createdAt: nowIso(),
-    version: 1,
-  };
-  const groupId = uuid2();
   await db.transaction('rw', db.paths, db.progressEvents, db.pendingOps, async () => {
+    const path = await db.paths.get(pathId);
+    if (!path) return;
+    const previous = path.completedQuantity ?? 0;
+    const next = Math.max(0, previous + delta);
+    const appliedDelta = next - previous;
+    if (appliedDelta === 0) return;
+    const updated: LearningPath = { ...path, completedQuantity: next, updatedAt: nowIso(), version: bumpVersion(path.version) };
+    const event: ProgressEvent = {
+      id: uuid2(), opId: uuid2(), pathId, itemId: null,
+      quantityDelta: appliedDelta, itemDone: null, entryId: null, undoneAt: null, createdAt: nowIso(),
+      version: 1,
+    };
+    const groupId = uuid2();
     await db.paths.put(updated);
     await db.progressEvents.add(event);
     await enqueueOp('path', pathId, updated, path.version, groupId, deviceId);
@@ -324,25 +326,23 @@ export async function deleteTodo(id: string): Promise<void> {
 export async function setGoal(input: { scope: Goal['scope']; subjectId: string | null; period: Goal['period']; targetSeconds: number }): Promise<void> {
   if (!Number.isFinite(input.targetSeconds) || input.targetSeconds < 0) throw new AppError('err.goalNonNegative');
   const deviceId = await ensureDeviceId();
-  // one active goal per scope+period
-  const existing = await db.goals
-    .filter((g) => !g.deletedAt && g.scope === input.scope && g.period === input.period && g.subjectId === input.subjectId)
-    .first();
-  if (existing) {
-    const updated: Goal = { ...existing, targetSeconds: input.targetSeconds, active: input.targetSeconds > 0, updatedAt: nowIso(), version: bumpVersion(existing.version) };
-    await db.transaction('rw', db.goals, db.pendingOps, async () => {
+  await db.transaction('rw', db.goals, db.pendingOps, async () => {
+    // Keep lookup and write together so concurrent saves cannot create duplicate goals.
+    const existing = await db.goals
+      .filter((g) => !g.deletedAt && g.scope === input.scope && g.period === input.period && g.subjectId === input.subjectId)
+      .first();
+    if (existing) {
+      const updated: Goal = { ...existing, targetSeconds: input.targetSeconds, active: input.targetSeconds > 0, updatedAt: nowIso(), version: bumpVersion(existing.version) };
       await db.goals.put(updated);
       await enqueueOp('goal', existing.id, updated, existing.version, null, deviceId);
-    });
-    return;
-  }
-  if (input.targetSeconds <= 0) return;
-  const goal: Goal = {
-    id: uuid2(), scope: input.scope, subjectId: input.subjectId, period: input.period,
-    targetSeconds: input.targetSeconds, active: true,
-    createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
-  };
-  await db.transaction('rw', db.goals, db.pendingOps, async () => {
+      return;
+    }
+    if (input.targetSeconds <= 0) return;
+    const goal: Goal = {
+      id: uuid2(), scope: input.scope, subjectId: input.subjectId, period: input.period,
+      targetSeconds: input.targetSeconds, active: true,
+      createdAt: nowIso(), updatedAt: nowIso(), deletedAt: null, version: 1,
+    };
     await db.goals.add(goal);
     await enqueueOp('goal', goal.id, goal, null, null, deviceId);
   });
@@ -350,12 +350,13 @@ export async function setGoal(input: { scope: Goal['scope']; subjectId: string |
 
 export async function addQuickAction(activityId: string, label: string): Promise<void> {
   const deviceId = await ensureDeviceId();
-  const duplicate = await db.quickActions.where('activityId').equals(activityId).filter((q) => !q.hidden).first();
-  if (duplicate) return;
-  // 计数与写入同一事务：并发添加时 sortOrder 不会冲突
-  const qa: QuickAction = { id: uuid2(), activityId, label, pinned: true, sortOrder: -1, hidden: false, version: 1 };
   await db.transaction('rw', db.quickActions, db.pendingOps, async () => {
-    qa.sortOrder = await db.quickActions.count();
+    const duplicate = await db.quickActions.where('activityId').equals(activityId).filter((q) => !q.hidden).first();
+    if (duplicate) return;
+    const qa: QuickAction = {
+      id: uuid2(), activityId, label, pinned: true,
+      sortOrder: await db.quickActions.count(), hidden: false, version: 1,
+    };
     await db.quickActions.add(qa);
     await enqueueOp('quickAction', qa.id, qa, null, null, deviceId);
   });

@@ -47,4 +47,17 @@ describe('local backup and CSV export', () => {
     tampered.manifest.counts.entries = 100;
     await expect(inspectBackup(JSON.stringify(tampered))).rejects.toThrow('计数不一致');
   });
+
+  it('rejects a checksummed backup with orphaned entity references', async () => {
+    const entry: EntryRecord = {
+      id: crypto.randomUUID(), deviceId: 'device-1', activityId: crypto.randomUUID(),
+      method: 'duration', learningDate: '2026-09-10', startedAt: null, endedAt: null,
+      timeZone: 'Asia/Shanghai', durationSeconds: 60,
+      createdAt, updatedAt: createdAt, deletedAt: null, version: 1,
+    };
+    await db.entries.add(entry);
+
+    const { blob } = await exportFullBackup();
+    await expect(inspectBackup(await blob.text())).rejects.toThrow('不存在的活动');
+  });
 });

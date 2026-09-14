@@ -69,6 +69,76 @@ export const ProgressEventDto = z.object({
   version: z.number().int().positive(),
 });
 
+export const LearningPathDto = z.object({
+  id: Uuid,
+  subjectId: Uuid,
+  name: z.string().min(1).max(200),
+  mode: PathMode,
+  totalQuantity: z.number().int().nonnegative().nullable(),
+  completedQuantity: z.number().int().nonnegative().nullable(),
+  unit: z.string().max(50).nullable(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: IsoDateTime.nullable(),
+  version: z.number().int().positive(),
+});
+
+export const PathItemDto = z.object({
+  id: Uuid,
+  pathId: Uuid,
+  parentId: Uuid.nullable(),
+  title: z.string().min(1).max(500),
+  sortOrder: z.number().int(),
+  done: z.boolean(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: IsoDateTime.nullable(),
+  version: z.number().int().positive(),
+});
+
+export const TodoDto = z.object({
+  id: Uuid,
+  title: z.string().min(1).max(500),
+  subjectId: Uuid.nullable(),
+  pathId: Uuid.nullable(),
+  itemId: Uuid.nullable(),
+  scheduledDate: DateKey.nullable(),
+  dueDate: DateKey.nullable(),
+  done: z.boolean(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: IsoDateTime.nullable(),
+  version: z.number().int().positive(),
+});
+
+export const GoalDto = z.object({
+  id: Uuid,
+  scope: z.enum(['all', 'subject']),
+  subjectId: Uuid.nullable(),
+  period: GoalPeriod,
+  targetSeconds: z.number().int().nonnegative(),
+  active: z.boolean(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: IsoDateTime.nullable(),
+  version: z.number().int().positive(),
+});
+
+export const QuickActionDto = z.object({
+  id: Uuid,
+  activityId: Uuid,
+  label: z.string().min(1).max(200),
+  pinned: z.boolean(),
+  sortOrder: z.number().int(),
+  hidden: z.boolean(),
+  version: z.number().int().positive(),
+});
+
+export const SettingDto = z.object({
+  key: z.string().min(1),
+  value: JsonValueSchema,
+});
+
 export const SyncOpDto = z.object({
   opId: Uuid,
   deviceId: z.string().min(1),
@@ -78,6 +148,10 @@ export const SyncOpDto = z.object({
   payload: JsonValueSchema,
   opGroupId: z.string().nullable(),
   clientTimestamp: IsoDateTime,
+});
+
+export const PendingOpDto = SyncOpDto.extend({
+  seq: z.number().int().positive().optional(),
 });
 
 export const SyncPushRequest = z.object({

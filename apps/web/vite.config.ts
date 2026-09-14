@@ -12,10 +12,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    chunkSizeWarningLimit: 700,
     rolldownOptions: {
       output: {
-        // 大依赖独立分包：业务改动不影响它们的长缓存（rolldown 的 advancedChunks）
-        advancedChunks: {
+        // 大依赖独立分包：业务改动不影响它们的长缓存。
+        codeSplitting: {
           groups: [
             { name: 'echarts', test: /[\\/]node_modules[\\/]echarts[\\/]/ },
             { name: 'dexie', test: /[\\/]node_modules[\\/](dexie|dexie-react-hooks)[\\/]/ },

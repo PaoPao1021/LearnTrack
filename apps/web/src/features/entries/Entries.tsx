@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, ChevronsUpDown, Calendar, FilterX } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
+import { EmptyState } from '../../components/common/EmptyState';
 import EntryModal from '../../components/common/EntryModal';
 import { Modal } from '../../components/common/Modal';
 import { updateEntry } from '../../services/commands';
@@ -11,6 +12,8 @@ import { todayKey, TZ } from '../../utils';
 import { useI18n, translateError } from '../../i18n';
 import type { Category, EntryRecord } from '@learntrack/domain';
 import { DeleteEntryDialog } from './DeleteEntryDialog';
+import { soundscape } from '../../services/soundscape';
+import { showToast } from '../../components/common/Toast';
 
 function fmtTime(ms: number): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ms));
@@ -21,32 +24,58 @@ function EntryRow({ entry, activity, subject, major, onEdit }: {
 }) {
   const { t, fmtDuration } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const color = activity?.color ?? 'var(--accent)';
+
   return (
-    <li className="flex items-start justify-between gap-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
-      <div className="min-w-0">
+    <li className="group relative flex items-start justify-between gap-3 overflow-hidden rounded-2xl border border-[var(--border-soft)]/60 bg-white/50 p-3.5 pl-4 backdrop-blur-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--border-glass)] dark:bg-white/[0.03]">
+      {/* 左侧科目专属彩色指示条 */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 group-hover:w-1.5"
+        style={{ background: color, boxShadow: `0 0 8px ${color}80` }}
+      />
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: activity?.color ?? '#999' }} />
-          <span className="font-medium">
+          <span className="font-semibold text-sm text-[var(--ink)]">
             {major ? `${major.name} / ` : ''}{subject?.name ?? ''} / {activity?.name ?? '—'}
           </span>
-          <span className="rounded bg-slate-200 px-1.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+          <span className="rounded-md border border-[var(--border-soft)]/60 bg-black/[0.03] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] dark:bg-white/[0.05]">
             {t(`method.${entry.method}` as 'method.duration' | 'method.range' | 'method.timer')}
           </span>
-          {entry.moodScore != null && <span className="text-xs text-slate-500">{t('entries.mood', { score: entry.moodScore })}</span>}
-          {entry.interruptionReason && <span className="text-xs text-slate-500">{t('entries.interruption', { reason: entry.interruptionReason })}</span>}
+          {entry.moodScore != null && <span className="text-xs text-[var(--text-tertiary)]">{t('entries.mood', { score: entry.moodScore })}</span>}
+          {entry.interruptionReason && <span className="text-xs text-[var(--text-tertiary)]">{t('entries.interruption', { reason: entry.interruptionReason })}</span>}
         </div>
-        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          {entry.startedAt != null && entry.endedAt != null
-            ? `${fmtTime(entry.startedAt)} – ${localDateKey(new Date(entry.endedAt), TZ) !== entry.learningDate ? t('entries.nextDay') : ''}${fmtTime(entry.endedAt)}`
-            : t('entries.noTime')}
-          {entry.pauseIntervals && entry.pauseIntervals.length > 0 && t('entries.pauseCount', { count: entry.pauseIntervals.length })}
-          {entry.note ? ` · ${entry.note}` : ''}
+        <div className="mt-1 text-xs text-[var(--text-secondary)] flex flex-wrap items-center gap-1.5">
+          <span>
+            {entry.startedAt != null && entry.endedAt != null
+              ? `${fmtTime(entry.startedAt)} – ${localDateKey(new Date(entry.endedAt), TZ) !== entry.learningDate ? t('entries.nextDay') : ''}${fmtTime(entry.endedAt)}`
+              : t('entries.noTime')}
+          </span>
+          {entry.pauseIntervals && entry.pauseIntervals.length > 0 && (
+            <span className="text-[var(--text-tertiary)]">· {t('entries.pauseCount', { count: entry.pauseIntervals.length })}</span>
+          )}
+          {entry.note && <span className="text-[var(--text-tertiary)] italic">· “{entry.note}”</span>}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className="font-semibold">{fmtDuration(entry.durationSeconds)}</span>
-        <button className="btn-ghost px-3 py-2 text-xs" onClick={onEdit}>{t('entries.edit')}</button>
-        <button className="btn-danger px-3 py-2 text-xs" onClick={() => setConfirmDelete(true)}>{t('common.delete')}</button>
+        <span className="tick-text font-bold text-sm text-[var(--ink)]">{fmtDuration(entry.durationSeconds)}</span>
+        <button
+          className="btn-ghost px-2.5 py-1 text-xs opacity-75 group-hover:opacity-100 transition-opacity"
+          onClick={() => {
+            soundscape.playTick();
+            onEdit();
+          }}
+        >
+          {t('entries.edit')}
+        </button>
+        <button
+          className="btn-danger px-2.5 py-1 text-xs opacity-75 group-hover:opacity-100 transition-opacity"
+          onClick={() => {
+            soundscape.playTick();
+            setConfirmDelete(true);
+          }}
+        >
+          {t('common.delete')}
+        </button>
       </div>
       {confirmDelete && (
         <DeleteEntryDialog
@@ -79,6 +108,7 @@ export default function Entries() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EntryRecord | null>(null);
+  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(new Set());
 
   const entries = useLiveQuery(() => db.entries.toArray(), [], [] as EntryRecord[]);
   const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
@@ -121,9 +151,39 @@ export default function Entries() {
     return [...map.entries()];
   }, [filtered, current]);
 
+  const allCollapsed = grouped.length > 0 && grouped.every(([d]) => collapsedDates.has(d));
+
+  const toggleCollapseAll = () => {
+    if (allCollapsed) {
+      setCollapsedDates((prev) => {
+        const next = new Set(prev);
+        for (const [d] of grouped) next.delete(d);
+        return next;
+      });
+    } else {
+      setCollapsedDates((prev) => {
+        const next = new Set(prev);
+        for (const [d] of grouped) next.add(d);
+        return next;
+      });
+    }
+  };
+
+  const toggleDate = (date: string) => {
+    soundscape.playTick();
+    setCollapsedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
+
   const majors = (categories ?? []).filter((c) => c.level === 'major' && !c.deletedAt);
   const subjects = (categories ?? []).filter((c) => c.level === 'subject' && !c.deletedAt);
   const activities = (categories ?? []).filter((c) => c.level === 'activity' && !c.deletedAt);
+
+  const isFiltered = Boolean(search.trim() || filterActivity);
 
   return (
     <div className="space-y-4">
@@ -132,7 +192,7 @@ export default function Entries() {
         <button className="btn-primary" onClick={() => setAddOpen(true)}><Plus size={15} /> {t('entries.add')}</button>
       </div>
 
-      <div className="card flex flex-wrap gap-2 p-3">
+      <div className="card flex flex-wrap items-center gap-2 p-3">
         <input className="input max-w-48" placeholder={t('entries.searchPlaceholder')} aria-label={t('entries.searchLabel')} value={search} onChange={(e) => updateParams({ q: e.target.value, page: null })} />
         <select className="input max-w-40" aria-label={t('entries.filterLabel')} value={filterActivity} onChange={(e) => updateParams({ filter: e.target.value, page: null })}>
           <option value="">{t('entries.filterAll')}</option>
@@ -146,45 +206,99 @@ export default function Entries() {
             {activities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </optgroup>
         </select>
-        <span className="ml-auto self-center text-xs text-slate-500 dark:text-slate-400">{t('entries.count', { count: filtered.length })}</span>
+
+        <div className="ml-auto flex items-center gap-3">
+          {grouped.length > 1 && (
+            <button
+              type="button"
+              className="btn-ghost flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              onClick={toggleCollapseAll}
+              title={allCollapsed ? t('entries.expandAll') : t('entries.collapseAll')}
+            >
+              <ChevronsUpDown size={13} />
+              <span>{allCollapsed ? t('entries.expandAll') : t('entries.collapseAll')}</span>
+            </button>
+          )}
+          <span className="self-center text-xs text-slate-500 dark:text-slate-400">{t('entries.count', { count: filtered.length })}</span>
+        </div>
       </div>
 
       {grouped.length === 0 && (
-        <div className="card p-8 text-center text-slate-500 dark:text-slate-400">
-          {t('entries.empty')}
-        </div>
+        isFiltered ? (
+          <EmptyState
+            icon={<FilterX size={20} />}
+            title={t('empty.noFilterResults')}
+            description={t('empty.clearFilter')}
+            action={{
+              label: t('empty.clearFilter'),
+              onClick: () => updateParams({ q: null, filter: null, page: null }),
+            }}
+          />
+        ) : (
+          <EmptyState
+            icon={<Calendar size={20} />}
+            title={t('empty.noRecords')}
+            description={t('entries.empty')}
+            action={{
+              label: t('entries.add'),
+              onClick: () => setAddOpen(true),
+            }}
+          />
+        )
       )}
 
-      {grouped.map(([date, list]) => (
-        <div key={date} className="card p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="font-semibold">
-              {date}
-              {date === todayKey() && <span className="ml-2 text-xs font-normal text-slate-400">{t('entries.today')}</span>}
-            </h2>
-            <span className="text-sm text-slate-500 dark:text-slate-400">
-              {fmtDuration(list.reduce((s, e) => s + e.durationSeconds, 0))}
-            </span>
+      {grouped.map(([date, list]) => {
+        const isCollapsed = collapsedDates.has(date);
+        return (
+          <div key={date} className="card p-4 transition-all">
+            <div
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDate(date); } }}
+              onClick={() => toggleDate(date)}
+              className="flex cursor-pointer select-none items-center justify-between rounded-lg p-1 -m-1 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/40"
+              aria-expanded={!isCollapsed}
+            >
+              <div className="flex items-center gap-2">
+                {isCollapsed ? (
+                  <ChevronRight size={16} className="text-slate-400 transition-transform" />
+                ) : (
+                  <ChevronDown size={16} className="text-slate-400 transition-transform" />
+                )}
+                <h2 className="text-sm font-semibold">
+                  {date}
+                  {date === todayKey() && <span className="ml-2 text-xs font-normal text-slate-400">{t('entries.today')}</span>}
+                </h2>
+                <span className="tick-text text-xs text-slate-400">
+                  ({list.length})
+                </span>
+              </div>
+              <span className="tick-text text-sm text-slate-500 dark:text-slate-400">
+                {fmtDuration(list.reduce((s, e) => s + e.durationSeconds, 0))}
+              </span>
+            </div>
+            {!isCollapsed && (
+              <ul className="mt-3 space-y-2">
+                {list.map((e) => {
+                  const activity = byId.get(e.activityId);
+                  const subject = activity?.parentId ? byId.get(activity.parentId) : undefined;
+                  const major = subject?.parentId ? byId.get(subject.parentId) : undefined;
+                  return (
+                    <EntryRow
+                      key={e.id}
+                      entry={e}
+                      activity={activity}
+                      subject={subject}
+                      major={major}
+                      onEdit={() => setEditing(e)}
+                    />
+                  );
+                })}
+              </ul>
+            )}
           </div>
-          <ul className="space-y-2">
-            {list.map((e) => {
-              const activity = byId.get(e.activityId);
-              const subject = activity?.parentId ? byId.get(activity.parentId) : undefined;
-              const major = subject?.parentId ? byId.get(subject.parentId) : undefined;
-              return (
-                <EntryRow
-                  key={e.id}
-                  entry={e}
-                  activity={activity}
-                  subject={subject}
-                  major={major}
-                  onEdit={() => setEditing(e)}
-                />
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+        );
+      })}
 
       {totalPages > 1 && (
         <nav className="flex items-center justify-center gap-3" aria-label={t('entries.pageNav')}>
