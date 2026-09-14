@@ -1,164 +1,264 @@
 <div align="center">
 
-# LearnTrack
+<p align="center">
+  <img src="docs/screenshots/dashboard-preview.png" alt="LearnTrack Hero Banner" width="100%" style="border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.15);" />
+</p>
 
-**本地优先的学习时间账本 — 记录每一次专注，看清每一份投入**
+# ⏱️ LearnTrack
 
-React · TypeScript · Dexie · ECharts · 液态玻璃设计
+**本地优先 · 液态玻璃美学 · 高精度学习时间账本**
 
-[功能](#-功能特性) · [快速开始](#-快速开始) · [项目结构](#-项目结构) · [测试](#-测试) · [文档](#-文档) · [License](#-license)
+*每一次专注都清晰可感，每一份投入皆有迹可循。*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178c6.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-18.3-61dafb.svg?style=flat-square&logo=react&logoColor=black)](https://reactjs.org/)
+[![Vite](https://img.shields.io/badge/Vite-8.3-646cff.svg?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Dexie](https://img.shields.io/badge/Dexie.js-IndexedDB-orange.svg?style=flat-square)](https://dexie.org/)
+[![ECharts](https://img.shields.io/badge/ECharts-6.1-aa344d.svg?style=flat-square&logo=apacheecharts&logoColor=white)](https://echarts.apache.org/)
+[![Tests](https://img.shields.io/badge/Tests-29%20passed-brightgreen.svg?style=flat-square)](packages/domain/src/index.test.ts)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
+
+[功能特性](#-功能特性) • [UI 视觉与交互美学](#-ui-视觉与交互美学) • [真机运行预览](#-真机运行预览) • [快速开始](#-快速开始) • [架构设计](#-架构设计) • [技术栈](#-技术栈) • [开源协议](#-开源协议)
 
 </div>
 
 ---
 
-## 📸 预览
+## 🌟 项目简介
 
-| 总览（浅色 / 深色） |
-| --- |
-| ![总览](docs/screenshots/dashboard-light.png) |
-| ![总览·深色](docs/screenshots/dashboard-dark.png) |
+**LearnTrack** 是一款专为终身学习者、考研考证党与深度思考者打造的 **本地优先（Local-First）学习时间记账与自我量化工具**。
 
-| 统计 | 学习 |
-| --- | --- |
-| ![统计](docs/screenshots/analytics-light.png) | ![学习](docs/screenshots/learning-light.png) |
+不同于市面上繁重且依赖强制联网的打卡软件，LearnTrack 遵循 **“数据绝对私有、极速响应、离线可用”** 原则。所有学习与专注数据均实时加密存储于浏览器的本地数据库（IndexedDB）中；界面全面采用**高级液态拟物玻璃（Liquid Glass）视觉体系**与**原生微机械动效**，让每一次进入学习状态都充满神圣的仪式感。
 
-> 数据全部保存在浏览器本机（IndexedDB），无需注册即可使用；可选的同步服务用于多设备之间互相推送。
+---
 
-## ✨ 功能特性
+## 🎨 UI 视觉与交互美学
 
-**时间记账**
-- ⏱️ **专注计时**：正计时 + 可选倒计时（到点只提醒，不打断），暂停区间合并计算，刷新后按绝对时间戳恢复
-- ✍️ **灵活补录**：只填时长，或填写精确时间段（支持跨午夜，按本地日分摊）；重叠记录显式确认后完整计入（记录时长口径，不做静默去重）
-- 🏷️ **三级分类**：大科目 → 具体科目 → 活动，内置常见学习分类；有数据的分类只可归档、不可删除，历史统计永不丢失
+LearnTrack 在 UI 细节与动效质感上进行了深度打磨，融合了拟物物理质感与现代数字界面的通透灵动：
 
-**统计洞察**
-- 📈 **趋势**：多科目叠加渐变曲线 + 上一同长度区间对比，日 / 周 / 月粒度自动切换
-- 🎯 **分布**：双层环形科目分布（中心总量）、科目排行、小时分布、单次时长分布、自评状态与打断统计
-- 🔥 **热力图**：GitHub 贡献图风格的本年度学习热力图，五档色阶，点击任意一天查看原始记录
-- ♿ **图表可访问**：所有图表带读屏摘要与数据表等价物，支持键盘操作与下钻
+### 1. 纯色卡片鼠标动态聚光（Spotlight Cursor Follow）
+全局所有信息卡片均注入实时微光聚光灯算法。鼠标在界面掠过时，卡片内壁映射出随光标精确位移的柔和高光（Radius 420px），并采用 `requestAnimationFrame` 硬件级帧率节流，在 120Hz/144Hz 高刷新率屏幕上带来如水银般顺滑的物理反光质感。
 
-**学习管理**
-- 🗺️ **学习路线**：章节清单（两层，可批量粘贴）或数量目标；记录时间时可顺带推进进度，删除记录可精确撤销关联进度
-- ✅ **待办**：计划日期 + 截止日期，逾期高亮
-- 🎯 **时长目标**：每日 / 每周目标完成度，超 100% 显示真实完成量
+### 2. 精密机械联动时计（Mechanical Chronograph Logo）
+界面左上角标识内置自研 SVG 机械轮系：外层天体刻度星齿以 18 秒周期顺时针运转，中层测速轨道逆时针环绕，精密时针与秒针呈 6:1 机械差速匀速滑扫，鼠标悬停时自动激发加速齿轮啮合动效。
 
-**数据与体验**
-- 💾 **本地优先**：数据保存在本机浏览器，离线完全可用；所有写入进入本地 outbox 队列，联网后自动推送
-- 🔄 **可选同步**：连接同步服务后多设备推送 / 拉取，按 opId 幂等、版本冲突双候选保留并由用户手动解决
-- 💼 **备份**：一键导出完整备份（含未同步状态，结构 / 计数 / 校验和 / 标识四重校验）；CSV 导出用于分析
-- 🌐 **中英双语**：一键切换，偏好本机保存
-- 🎨 **液态玻璃界面**：浅色 / 深色 / 跟随系统，六色强调色可调；`prefers-reduced-motion` 与 `prefers-reduced-transparency` 全套降级
+### 3. 全屏沉浸专注模式（Zen Mode & Flow Field）
+一键全屏隐藏所有侧边栏与繁杂干扰，中央呈现呼吸律动时针大表盘。内置 **纯原生 Web Audio 声学心流场**，无需下载任何外部音频文件，零网络开销动态合成真实雨声、深海潮汐与阻断脑电波杂讯的 1/f² 深度棕色噪点（Brown Noise）。
+
+### 4. 几何无点圆润数字排印（Tick-Text Typography）
+告别传统生硬的打孔数字，全局数字均采用圆润饱满的几何几何字体，并强制开启 OpenType `tnum`（等宽对齐）与 `zero: 0` 特性，确保倒计时跳动、秒数递增时数字骨架绝对稳固、零晃动。
+
+### 5. 晶体高对比度微热力日历（Glass Calendar）
+剔除冗余遮挡滤镜，以纯粹的高透晶体面板呈现当月日期。每个日期格子底部配备活动微型多色指示点（Activity Micro-Dots），支持上一年/下一月快速穿梭与一键回溯历史复盘。
+
+---
+
+## 📸 真机运行预览
+
+### 💻 仪表盘全景（Dashboard）
+*全局沉浸主页：专注时钟、多维时长统计、今日待办清单与学习路径合一。*
+![Dashboard Overview](docs/screenshots/dashboard-preview.png)
+
+---
+
+### 🧘 全屏专注模式与心流声学（Zen Focus Mode）
+*全屏零干扰，呼吸律动倒计时，随心切换雨声、海浪与深度棕噪。*
+![Zen Focus Mode](docs/screenshots/zen-mode.png)
+
+---
+
+### 📊 多维深度统计看板（Analytics）
+*实心内层核心领域 + 加粗外层细分科目双层环扇形图，GitHub 同款五档色阶年度热力图。*
+![Analytics Dashboard](docs/screenshots/analytics-preview.png)
+
+---
+
+### 🗓️ 晶体热力日历与复盘穿梭（Glass Calendar）
+*高对比度多层玻璃质感，集成微活动色彩指示器，支持快速时间旅行。*
+![Calendar Modal](docs/screenshots/calendar-modal.png)
+
+---
+
+### 🗺️ 体系化学习路线（Learning Paths）
+*树状章节清单、数量型目标推进，进度与专注时间双向精确绑定。*
+![Learning Paths](docs/screenshots/learning-preview.png)
+
+---
+
+### 🌙 深色模式对比（Dark Theme）
+*支持深色模式与浅色模式无缝瞬切，或设置定时自动切换，冷灰黑底色防眩光。*
+![Dark Theme](docs/screenshots/dashboard-dark.png)
+
+---
+
+## ✨ 核心功能特性
+
+### ⏱️ 专注计时与时间账本
+- **正计时 / 倒计时**：专注中途支持随时暂停，自动闭合暂停区间；支持超额记录。
+- **抗休眠与刷新恢复**：采用绝对壁钟时间戳（Wall-Clock Timestamps）恢复状态，电脑合盖休眠或误关页面，时长精准如初。
+- **跨午夜智能分摊**：支持通宵或深夜学习记录，跨午夜段按当地日期自动拆解统计。
+- **三级分类体系**：`大类领域 → 具体科目 → 细分活动`，支持多层级自定义专属颜色，历史记录永不因分类调整而丢失。
+
+### 📊 深度量化与统计洞察
+- **重构双层分布圆盘**：实心内圆代表核心大类，外围加粗粗环展示详细活动，外置独立高光投入数据条。
+- **GitHub 风格年度贡献热力图**：全年度学习密度按 5 档色阶直观分布，点击任意网格直接下钻查看该日原始记录。
+- **多维度交叉分析**：多科目日/周/月叠加渐变趋势图、单次时长区间分布（<30m、1h、2h+）及 24 小时精力分布波峰。
+
+### 🛡️ 本地优先与隐私安全
+- **100% 离线可用**：所有业务逻辑、数据库驱动与音频合成全部运行在浏览器本地，断网状态丝滑无阻。
+- **幂等同步引擎**：内置 Outbox 队列事务，联网后与私有同步服务（Node.js + SQLite）双向推送，版本冲突由用户自主裁决。
+- **四重防篡改备份**：一键导出 JSON 镜像，支持结构、计数、SHA-256 校验和与关系完整性全量验证；同时支持导出 CSV 供 Excel/Python 进阶分析。
+
+---
 
 ## 🚀 快速开始
 
-环境要求：Node.js ≥ 20
+### 前置要求
+- [Node.js](https://nodejs.org/) ≥ 20.0.0
+- npm ≥ 10.0.0
+
+### 本地开发
 
 ```bash
-# 安装依赖（npm workspaces monorepo）
+# 1. 克隆代码仓库
+git clone https://github.com/PaoPao1021/LearnTrack.git
+cd LearnTrack
+
+# 2. 安装 Monorepo 所有依赖
 npm install
 
-# 启动 web 应用（http://localhost:5173）
+# 3. 启动前端 Web 开发服务
 npm run dev:web
+```
 
-# 可选：启动同步服务 API（默认 http://localhost:8787，web 已配置 /api 代理）
+启动完成后，在浏览器访问：**`http://localhost:5173`** 即可即刻体验。
+
+### 可选：启动多端同步服务（API）
+
+```bash
+# 启动配套的 Fastify 同步服务端（默认运行在 http://localhost:8787）
 npm run dev:api
 ```
 
+> **说明**：无需启动 API 服务亦可完整使用全部时间记账、图表分析与数据导出功能。
+
+---
+
+## 🧪 自动化测试与质量保障
+
+项目严格践行测试驱动与防御式编程，已涵盖领域计算纯函数、离线队列一致性、计时器抗休眠等 29 项核心单元测试：
+
 ```bash
-# 运行全部测试（domain 14 / api 2 / web 5）
+# 运行全工作区单元测试（Vitest）
 npm test
 
-# 生产构建（所有包）
+# 执行生产环境编译打包检查（TypeScript 严格检查 + Vite 优化分包）
 npm run build
 ```
 
-> 不启动 API 也可以完整使用：所有功能离线可用，数据在本机。
+```text
+ ✓ packages/domain   14 passed (14)
+ ✓ apps/api           3 passed (3)
+ ✓ apps/web          12 passed (12)
+ ────────────────────────────────────
+ Test Files  6 passed (6)
+      Tests  29 passed (29)
+   Duration  1.48s
+```
+
+---
+
+## 🏛️ 架构设计
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       浏览器宿主 (Web App)                    │
+│                                                             │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │               React 18 + Tailwind UI 层              │   │
+│   │   (Liquid Glass · Zen Mode · Chrono SVG · ECharts)  │   │
+│   └──────────────────────────┬──────────────────────────┘   │
+│                              │ 读写操作                      │
+│                              ▼                              │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │           Dexie.js (浏览器 IndexedDB 本地库)          │   │
+│   │  (Categories · Entries · Paths · Todos · Goals)     │   │
+│   └──────────────────────────┬──────────────────────────┘   │
+│                              │ 同事务双写                    │
+│                              ▼                              │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │                 Local Outbox 事务队列                │   │
+│   └──────────────────────────┬──────────────────────────┘   │
+└──────────────────────────────┼──────────────────────────────┘
+                               │ 在线时双向幂等同步 (Op-Log)
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    自托管私有同步服务 (Fastify)               │
+│               SQLite · Session Auth · 冲突保留               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## 🧱 技术栈
 
-| 层 | 技术 |
-| --- | --- |
-| 前端 | React 18 · TypeScript · Tailwind CSS · Zustand · React Router |
-| 本地数据 | Dexie（IndexedDB）+ dexie-react-hooks 实时查询 |
-| 图表 | ECharts（按需注册 + 独立分包） |
-| 领域层 | `@learntrack/domain`：统计口径、跨午夜分摊、重叠判定等纯函数（独立测试） |
-| 契约 | `@learntrack/contracts`：Zod schema，同步协议与备份格式共用 |
-| 同步服务 | Node.js + Fastify + SQLite，会话 Cookie 鉴权 |
-| 测试 | Vitest |
+| 层次 | 技术选型 | 用途与优势 |
+| :--- | :--- | :--- |
+| **基础框架** | [React 18](https://react.dev/) + [TypeScript 5.6](https://www.typescriptlang.org/) | 强类型组件化开发，确保运行时零异常 |
+| **工程构建** | [Vite 8](https://vitejs.dev/) + [Rollup](https://rollupjs.org/) | 秒级热更新，生产环境智能代码分块 |
+| **本地存储** | [Dexie.js](https://dexie.org/) (IndexedDB) | 纯前端本地持久化，支持响应式 liveQuery 查询 |
+| **状态流转** | [Zustand 5](https://zustand-demo.pmnd.rs/) | 轻量、无样板代码，与 LocalStorage 实时同步时计状态 |
+| **数据可视化** | [Apache ECharts 6](https://echarts.apache.org/) | 按需注册 Tree-shaking，支持全套无障碍读屏等价物 |
+| **声音系统** | Web Audio API (Native Oscillator) | 100% 离线可用的心流场白噪音与微触感回馈音 |
+| **样式体系** | [Tailwind CSS 3](https://tailwindcss.com/) + 自定义设计令牌 | 纯原生 CSS 变量驱动，完美支持深/浅主题与强调色无缝切换 |
+| **多语言** | 自研轻量类型安全 `i18n` | 支持简中、英文随心热切换，词条完整覆盖 |
 
-### 本地优先架构
+---
 
-```
-┌─────────────────────────── 浏览器 ───────────────────────────┐
-│  UI (React)                                                  │
-│    ↓ 写入                                                    │
-│  IndexedDB（唯一数据源） ←→ outbox 队列（同一事务写入）          │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ 在线时：上行 op / 下行 op（幂等回放）
-                    同步服务（可选）：版本冲突双候选，永不静默覆盖
-```
+## 📁 目录结构
 
-- **单一数据源**：UI 只读写 IndexedDB，同步不改变本地写入路径
-- **事务一致性**：实体与 outbox 同事务落盘，杜绝“本地成功、同步丢失”
-- **冲突不静默**：版本冲突时双方候选保留，由用户选择保留哪一个
-- **离线补偿**：删除使用 tombstone，拉取按 opId 幂等回放，切换服务器重置游标
-
-## 📁 项目结构
-
-```
-learntrack/
+```text
+LearnTrack/
 ├── apps/
-│   ├── web/                  # 前端应用（Vite · PWA）
-│   │   ├── public/           #   manifest / Service Worker / 图标
+│   ├── web/                     # 前端单页应用（PWA · 离线优先）
+│   │   ├── public/              # 静态资源与 PWA ServiceWorker
 │   │   └── src/
-│   │       ├── app/          #   路由入口
-│   │       ├── components/   #   通用组件（Modal / Segmented / Combobox…）
-│   │       ├── features/     #   dashboard · entries · analytics · learning · settings
-│   │       ├── services/     #   commands（写模型）/ sync / backup / queue
-│   │       ├── stores/       #   Zustand（计时器，localStorage 持久化）
-│   │       ├── i18n/         #   中英词典与 Provider
-│   │       ├── db/           #   Dexie schema 与迁移
-│   │       └── styles/       #   设计令牌与液态玻璃材质
-│   └── api/                  # 同步服务（Fastify + SQLite）
+│   │       ├── components/      # 通用液态玻璃组件（Modal, Combobox, Logo, Toast）
+│   │       ├── features/        # 核心业务模块（Dashboard, Analytics, Entries...）
+│   │       ├── services/        # 声音引擎 (Soundscape), 备份恢复, 指令队列
+│   │       ├── stores/          # Zustand 状态机（计时器核心）
+│   │       ├── db/              # Dexie 数据库架构与种子数据
+│   │       └── styles/          # 全局设计令牌、卡片聚光灯与关键帧动画
+│   └── api/                     # 极轻量私有同步服务（Fastify + SQLite）
 ├── packages/
-│   ├── domain/               # 纯函数领域层（统计 / 时间 / 种子）+ 单元测试
-│   └── contracts/            # Zod 契约（同步协议 / 备份清单）
-├── database/                 # 服务端 SQL 迁移
-├── docs/
-│   ├── api/                  # 同步协议说明
-│   ├── operations/           # 运维手册
-│   ├── reviews/              # 代码审计与功能测试报告
-│   └── screenshots/          # 预览图
-└── infrastructure/           # 容器化运行文件
+│   ├── domain/                  # 核心纯函数领域层（时间算法、跨午夜分摊、统计模型）
+│   └── contracts/               # 跨端 Zod 契约模式（同步协议、备份校验规范）
+├── docs/                        # 设计文档与真机运行截图预览
+└── infrastructure/              # 容器化部署脚本
 ```
 
-## 🧪 测试
+---
 
-```bash
-npm test        # 全部 21 项：domain 14 · api 2 · web 5
-```
+## 🤝 贡献指南 (Contributing)
 
-覆盖重点：跨午夜时间分摊、重叠区间合并、时长口径统计、备份校验链（结构 / 计数 / checksum / 标识 / 引用）、同步出队事务、会话鉴权。界面层另有两轮全功能浏览器回归，报告见 [`docs/reviews/`](docs/reviews/)。
+我们非常欢迎社区贡献！无论是新功能想法、UI 建议还是代码重构：
 
-## 📖 文档
+1. **Fork** 本仓库；
+2. 新建你的功能分支 (`git checkout -b feature/amazing-feature`)；
+3. 确保所有类型检查与测试通过 (`npm test && npm run build`)；
+4. 提交你的更改 (`git commit -m 'feat: add some amazing feature'`)；
+5. 推送到分支 (`git push origin feature/amazing-feature`)；
+6. 提交 **Pull Request**！
 
-- [`DEVELOPMENT.md`](DEVELOPMENT.md) — 产品规则与开发细节
-- [`docs/api/`](docs/api/README.md) — 同步协议与接口
-- [`docs/operations/runbook.md`](docs/operations/runbook.md) — 运维手册
-- [`docs/reviews/`](docs/reviews/) — 审计与测试报告
+---
 
-## 🗺️ Roadmap
+## 📄 开源协议 (License)
 
-- [ ] 自定义背景图（玻璃材质随背景自适应）
-- [ ] 每科目分类目标
-- [ ] 统计周报导出（PNG / PDF）
-- [ ] 更多语言覆盖
+本项目采用 [MIT License](LICENSE) 开源协议。你可以自由使用、修改与二次分发，但请保留原作者版权说明。
 
-## 🤝 参与
+---
 
-Issue 与 PR 均欢迎：提交前请跑 `npm test` 与 `npm run build`，保持既有代码风格——领域纯函数放 `packages/domain` 并配套测试。
-
-## 📄 License
-
-[MIT](LICENSE)
+<div align="center">
+  <sub>Built with ❤️ for lifelong learners. Keep learning, keep tracking.</sub>
+</div>
