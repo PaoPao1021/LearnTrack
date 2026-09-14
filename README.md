@@ -17,7 +17,7 @@
 [![Dexie](https://img.shields.io/badge/Dexie.js-IndexedDB-orange.svg?style=flat-square)](https://dexie.org/)
 [![ECharts](https://img.shields.io/badge/ECharts-6.1-aa344d.svg?style=flat-square&logo=apacheecharts&logoColor=white)](https://echarts.apache.org/)
 [![Tests](https://img.shields.io/badge/Tests-29%20passed-brightgreen.svg?style=flat-square)](packages/domain/src/index.test.ts)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](#-贡献指南-contributing)
 
 [功能特性](#-功能特性) • [UI 视觉与交互美学](#-ui-视觉与交互美学) • [真机运行预览](#-真机运行预览) • [快速开始](#-快速开始) • [架构设计](#-架构设计) • [技术栈](#-技术栈) • [开源协议](#-开源协议)
 
