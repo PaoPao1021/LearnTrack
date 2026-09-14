@@ -538,7 +538,7 @@ const en: Record<MessageKey, string> = {
   'heat.title': 'Heatmap',
   'heat.pick': 'Inspect a day',
   'heat.subtitle': 'Daily view for this year',
-  'heat.summary': 'Studied {days} days in the past year · {total} total',
+  'heat.summary': 'Studied {days} day(s) in the past year · {total} total',
   'heat.less': 'Less',
   'heat.more': 'More',
   'pie.totalLabel': 'Total',
