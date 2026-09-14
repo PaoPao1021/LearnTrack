@@ -14,7 +14,7 @@ import { todayKey, TZ } from '../../utils';
 import * as echarts from 'echarts/core';
 import { BarChart, HeatmapChart, LineChart, PieChart } from 'echarts/charts';
 import {
-  CalendarComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent,
+  CalendarComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent, VisualMapComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { StatsResult, CategoryTotals, Category, EntryRecord } from '@learntrack/domain';
@@ -22,7 +22,7 @@ import { ChevronRight, Layers, BarChart3, Clock3, Flame, ListChecks } from 'luci
 
 echarts.use([
   BarChart, HeatmapChart, LineChart, PieChart,
-  CalendarComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent,
+  CalendarComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent, VisualMapComponent,
   CanvasRenderer,
 ]);
 
@@ -42,6 +42,8 @@ function chartPalette() {
     line: cssVar('--chart-line', 'rgba(23,30,46,0.12)'),
     grid: cssVar('--chart-grid', 'rgba(23,30,46,0.07)'),
     prev: cssVar('--chart-label', '#9ca3af'),
+    pieBorder: cssVar('--surface-elevated', '#ffffff'),
+    heat: [0, 1, 2, 3, 4].map((i) => cssVar(`--heat-${i}`, '#40c463')),
   };
 }
 
@@ -68,13 +70,20 @@ function useChart(setOptions: (chart: echarts.ECharts) => void, deps: unknown[])
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ref.current) return;
-    const chart = echarts.init(ref.current);
-    setOptions(chart);
-    const onResize = () => chart.resize();
+    let chart: echarts.ECharts | null = null;
+    try {
+      chart = echarts.init(ref.current);
+      setOptions(chart);
+    } catch (err) {
+      console.error('chart init failed', err);
+      chart?.dispose();
+      return;
+    }
+    const onResize = () => chart?.resize();
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
-      chart.dispose();
+      chart?.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
@@ -262,9 +271,14 @@ export default function Analytics() {
     return { labels, values: labels.map((k) => buckets.get(k) ?? 0) };
   };
 
-  // 主趋势：各科目叠加曲线 + 上期总量灰色虚线（按索引对齐）
+  // 主趋势：各科目叠加曲线 + 上期总量灰色虚线（按索引对齐）；渐变面积增强可读性
   const trendRef = useChart((chart) => {
     const palette = chartPalette();
+    const safeHex = (color: string) => (/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#808080');
+    const gradient = (color: string) => new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+      { offset: 0, color: safeHex(color) + '3d' },
+      { offset: 1, color: safeHex(color) + '00' },
+    ]);
     const currentByDay = new Map(stats.byDay.map((d) => [d.date, d.seconds]));
     const previousByDay = new Map(prevStats.byDay.map((d) => [d.date, d.seconds]));
     const cur = aggregateSeries(majorSeries.days.map((day) => currentByDay.get(day) ?? 0), majorSeries.days);
@@ -281,13 +295,14 @@ export default function Analytics() {
       },
       series: [
         ...majorSeries.series.map((s) => ({
-          name: s.name, type: 'line' as const, smooth: true, symbol: 'none',
+          name: s.name, type: 'line' as const, smooth: 0.4, symbol: 'none',
           data: aggregateSeries(s.data, majorSeries.days).values,
           lineStyle: { width: 2.5, color: s.color }, itemStyle: { color: s.color },
-          areaStyle: { opacity: 0.08, color: s.color },
+          areaStyle: { color: gradient(s.color) },
+          emphasis: { focus: 'series' as const },
         })),
         {
-          name: t('trend.prev'), type: 'line' as const, smooth: true, symbol: 'none',
+          name: t('trend.prev'), type: 'line' as const, smooth: 0.4, symbol: 'none',
           data: prevAgg.values, lineStyle: { width: 1.5, type: 'dashed', opacity: 0.5 },
           itemStyle: { color: palette.prev },
         },
@@ -295,7 +310,7 @@ export default function Analytics() {
     });
   }, [stats.byDay, prevStats.byDay, majorSeries, prevMajorSeries, gran, lang, themeTick]);
 
-  // 扇形图：双层环，内环大科目，外环具体科目；点击下钻原始记录（零值分类不参与渲染）
+  // 扇形图：双层环，内环大科目，外环具体科目；中心显示总时长，点击下钻原始记录（零值分类不参与渲染）
   const pieRef = useChart((chart) => {
     const palette = chartPalette();
     const inner = stats.categories.map((c) => ({ name: catName(c.categoryId), value: c.totalSeconds, id: c.categoryId })).filter((d) => d.value > 0);
@@ -306,14 +321,27 @@ export default function Analytics() {
     chart.setOption({
       tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${formatDuration(p.value, lang)} (${p.percent}%)` },
       legend: { bottom: 0, textStyle: { fontSize: 10, color: palette.label }, type: 'scroll' },
+      title: {
+        text: fmtDuration(stats.totalSeconds),
+        subtext: t('pie.totalLabel'),
+        left: 'center',
+        top: '40%',
+        textStyle: { fontSize: 18, fontWeight: 700, color: palette.label },
+        subtextStyle: { fontSize: 11, color: palette.label },
+        itemGap: 2,
+      },
       series: [
         {
-          type: 'pie', radius: ['34%', '52%'], label: { show: false },
+          type: 'pie', radius: ['40%', '58%'], label: { show: false },
+          itemStyle: { borderColor: palette.pieBorder, borderWidth: 2, borderRadius: 4 },
+          emphasis: { scaleSize: 6 },
           data: inner.map((d) => ({ ...d, itemStyle: { color: colorOf(d.id) } })),
         },
         {
-          type: 'pie', radius: ['62%', '78%'], label: { show: false },
-          data: outer.map((d) => ({ ...d, itemStyle: { color: colorOf(d.id), opacity: 0.55 } })),
+          type: 'pie', radius: ['66%', '80%'], label: { show: false },
+          itemStyle: { borderColor: palette.pieBorder, borderWidth: 2, borderRadius: 3 },
+          emphasis: { scaleSize: 4 },
+          data: outer.map((d) => ({ ...d, itemStyle: { color: colorOf(d.id), opacity: 0.62 } })),
         },
       ],
     });
@@ -352,8 +380,13 @@ export default function Analytics() {
     chart.setOption({
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => formatDuration(Number(v), lang) },
       grid: { left: 90, right: 52, top: 8, bottom: 8 },
-      xAxis: { type: 'value', show: false },
-      yAxis: { type: 'category', inverse: true, data: ranking.map((r) => r.name), axisLabel: { fontSize: 11, color: palette.label } },
+      xAxis: { type: 'value', show: false, splitLine: { show: false } },
+      yAxis: {
+        type: 'category', inverse: true, data: ranking.map((r) => r.name),
+        axisLabel: { fontSize: 11, color: palette.label },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
       series: [{
         type: 'bar', barWidth: 12, borderRadius: 6,
         data: ranking.map((r) => ({ value: r.seconds, itemStyle: { color: r.color } })),
@@ -404,25 +437,68 @@ export default function Analytics() {
     });
   }, [stats.byHour, lang, themeTick]);
 
+  // 热力图：GitHub 贡献图风格——固定小方格、周日开头、月份置顶、五档色阶、空日补 0
+  const today = todayKey();
+  const heatByDay = useMemo(() => new Map(stats.byDay.map((d) => [d.date, d.seconds])), [stats.byDay]);
+  const heatDays = useMemo(() => {
+    const days: string[] = [];
+    const yearStart = `${today.slice(0, 4)}-01-01`;
+    const cur = new Date(Date.UTC(Number(yearStart.slice(0, 4)), 0, 1));
+    const end = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10))));
+    while (cur <= end) {
+      days.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return days;
+  }, [today]);
+  const heatSummary = useMemo(() => {
+    const activeDays = stats.byDay.filter((d) => d.seconds > 0).length;
+    const total = stats.byDay.reduce((sum, d) => sum + d.seconds, 0);
+    return { activeDays, total };
+  }, [stats.byDay]);
+
   const heatRef = useChart((chart) => {
     const palette = chartPalette();
     const yearStart = `${todayKey().slice(0, 4)}-01-01`;
-    const data = stats.byDay.map((d) => [d.date, d.seconds]);
+    const data = heatDays.map((day) => [day, heatByDay.get(day) ?? 0]);
+    const isZh = lang === 'zh';
     chart.setOption({
-      tooltip: { formatter: (p: { value: [string, number] }) => `${p.value[0]}: ${formatDuration(p.value[1], lang)}` },
-      visualMap: { min: 0, max: Math.max(4 * 3600, ...stats.byDay.map((d) => d.seconds)), show: false },
+      tooltip: {
+        formatter: (p: { value: [string, number] }) => `${p.value[0]}: ${formatDuration(p.value[1], lang)}`,
+      },
+      visualMap: {
+        show: false,
+        type: 'piecewise',
+        pieces: [
+          { max: 0, color: palette.heat[0] },
+          { min: 1, max: 1800, color: palette.heat[1] },
+          { min: 1801, max: 3600, color: palette.heat[2] },
+          { min: 3601, max: 7200, color: palette.heat[3] },
+          { min: 7201, color: palette.heat[4] },
+        ],
+      },
       calendar: {
         range: [yearStart, todayKey()],
-        cellSize: ['auto', 14],
-        left: 48, top: 24,
-        itemStyle: { color: 'rgba(128,128,128,0.12)', borderColor: 'transparent' },
-        dayLabel: { color: palette.label },
-        monthLabel: { color: palette.label },
+        cellSize: ['auto', 11],
+        left: 26, right: 8, top: 20, bottom: 4,
+        itemStyle: { color: 'transparent', borderColor: 'transparent', borderWidth: 0 },
+        splitLine: { show: false },
+        dayLabel: {
+          firstDay: 0, // 周日在第一行，与 GitHub 一致
+          nameMap: isZh ? ['日', '一', '二', '三', '四', '五', '六'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+          color: palette.label, fontSize: 9,
+        },
+        monthLabel: {
+          position: 'top',
+          nameMap: isZh ? 'cn' : 'en',
+          color: palette.label, fontSize: 10, fontWeight: 600,
+        },
         yearLabel: { show: false },
       },
       series: [{
         type: 'heatmap', coordinateSystem: 'calendar', data,
-        itemStyle: { borderRadius: 3 },
+        itemStyle: { borderRadius: 2.5 },
+        emphasis: { itemStyle: { shadowBlur: 4, shadowColor: 'rgba(0,0,0,0.3)', borderRadius: 2.5 } },
       }],
     });
     chart.off('click');
@@ -431,7 +507,7 @@ export default function Analytics() {
       if (!day) return;
       setDrill({ title: t('heat.drillTitle', { day }), entries: (entries ?? []).filter((e) => !e.deletedAt && (entrySecondsByLocalDay(e)[day] ?? 0) > 0) });
     });
-  }, [stats.byDay, entries, lang, themeTick]);
+  }, [heatDays, heatByDay, entries, lang, themeTick]);
 
   const deltaPct = prevStats.totalSeconds > 0
     ? Math.round(((stats.totalSeconds - prevStats.totalSeconds) / prevStats.totalSeconds) * 100)
@@ -664,7 +740,7 @@ export default function Analytics() {
         </div>
       </section>
 
-      {/* 热力图 */}
+      {/* 热力图（GitHub 贡献图风格） */}
       <section className="card p-5">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="display text-lg">{t('heat.title')}</h2>
@@ -682,14 +758,28 @@ export default function Analytics() {
             />
           </div>
         </div>
-        <p className="chart-title mb-2">{t('heat.subtitle')}</p>
+        <p className="chart-title mb-2">
+          {t('heat.summary', { days: heatSummary.activeDays, total: fmtDuration(heatSummary.total) })}
+        </p>
         <div
           className="relative"
           role="img"
           aria-label={t('heat.aria', { current: streak.current, best: streak.longest })}
         >
-          <div ref={heatRef} className="h-40" />
+          <div ref={heatRef} className="h-32" />
           {stats.byDay.every((d) => d.seconds === 0) && <ChartEmpty text={t('chart.empty')} />}
+        </div>
+        <div className="mt-1 flex items-center justify-end gap-1.5">
+          <span className="chart-title">{t('heat.less')}</span>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span
+              key={i}
+              className="inline-block h-2.5 w-2.5 rounded-[3px]"
+              style={{ background: chartPalette().heat[i] }}
+              aria-hidden
+            />
+          ))}
+          <span className="chart-title">{t('heat.more')}</span>
         </div>
       </section>
 

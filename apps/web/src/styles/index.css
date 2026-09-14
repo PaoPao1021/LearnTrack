@@ -82,6 +82,12 @@
   --chart-line: rgba(23, 30, 46, 0.12);
   --chart-label: #566070;
   --chart-grid: rgba(23, 30, 46, 0.07);
+  /* 热力图五档（GitHub 贡献图同款梯度） */
+  --heat-0: #ebedf0;
+  --heat-1: #9be9a8;
+  --heat-2: #40c463;
+  --heat-3: #30a14e;
+  --heat-4: #216e39;
 
   /* 圆角 / 间距（Tailwind 4px 栅格为主）*/
   --radius-card: 20px;
@@ -151,6 +157,11 @@
   --chart-line: rgba(255, 255, 255, 0.14);
   --chart-label: #a7b0bf;
   --chart-grid: rgba(255, 255, 255, 0.08);
+  --heat-0: #1e2735;
+  --heat-1: #0e4429;
+  --heat-2: #006d32;
+  --heat-3: #26a641;
+  --heat-4: #39d353;
 }
 
 * { -webkit-tap-highlight-color: transparent; }
