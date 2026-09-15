@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-export const DateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
+export const DateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD').refine((value) => {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}, 'expected a valid calendar date');
 export const IsoDateTime = z.string().datetime();
 export const Uuid = z.string().uuid();
 
@@ -139,6 +142,38 @@ export const SettingDto = z.object({
   value: JsonValueSchema,
 });
 
+const entitySchemas: Record<string, z.ZodTypeAny> = {
+  category: CategoryDto, entry: EntryDto, path: LearningPathDto,
+  pathItem: PathItemDto, progressEvent: ProgressEventDto, todo: TodoDto,
+  goal: GoalDto, quickAction: QuickActionDto, settings: SettingDto,
+};
+
+/** Device identity, credentials and sync cursors must never arrive from another device. */
+const localSettings = new Set([
+  'deviceId', 'serverUrl', 'lastSyncCursor', 'loggedIn', 'lastSyncState',
+  'syncState', 'syncEpoch', 'serverBackupAt', 'computerBackupAt',
+]);
+
+/** Shared by the API, remote application and backup conflict validation. */
+export function validateEntityPayload(entity: string, entityId: string, payload: unknown): boolean {
+  if (!Object.hasOwn(entitySchemas, entity)) return false;
+  if (entity === 'settings') {
+    if (!entityId || localSettings.has(entityId)) return false;
+  } else if (!Uuid.safeParse(entityId).success) return false;
+  if (payload === null) return true;
+  const parsed = entitySchemas[entity]!.safeParse(payload);
+  if (!parsed.success) return false;
+  if (entity === 'settings') return parsed.data.key === entityId;
+  if (parsed.data.id !== entityId) return false;
+  if (entity === 'entry') {
+    const entry = parsed.data as z.infer<typeof EntryDto>;
+    try { new Intl.DateTimeFormat('en', { timeZone: entry.timeZone }); } catch { return false; }
+    if (entry.startedAt !== null && entry.endedAt !== null && entry.endedAt < entry.startedAt) return false;
+    if (entry.pauseIntervals?.some((pause) => pause.endAt < pause.startAt)) return false;
+  }
+  return true;
+}
+
 export const SyncOpDto = z.object({
   opId: Uuid,
   deviceId: z.string().min(1),
@@ -146,7 +181,7 @@ export const SyncOpDto = z.object({
   entityId: z.string().min(1),
   baseVersion: z.number().int().positive().nullable(),
   payload: JsonValueSchema,
-  opGroupId: z.string().nullable(),
+  opGroupId: z.string().min(1).nullable(),
   clientTimestamp: IsoDateTime,
 });
 
@@ -167,14 +202,14 @@ export const SyncPushResponse = z.object({
     opId: Uuid,
     entity: z.string(),
     entityId: z.string(),
-    serverVersion: z.number().int(),
+    serverVersion: z.number().int().nonnegative(),
     serverPayload: JsonValueSchema,
   })),
-  cursor: z.number().int(),
+  cursor: z.number().int().nonnegative(),
 });
 
 export const SyncPullResponse = z.object({
-  cursor: z.number().int(),
+  cursor: z.number().int().nonnegative(),
   ops: z.array(SyncOpDto.extend({ serverTimestamp: IsoDateTime })),
 });
 

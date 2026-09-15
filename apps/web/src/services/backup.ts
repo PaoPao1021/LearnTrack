@@ -12,7 +12,9 @@ import {
   QuickActionDto,
   SettingDto,
   TodoDto,
+  validateEntityPayload,
 } from '@learntrack/contracts';
+import { z } from 'zod';
 
 export interface BackupManifest {
   formatVersion: 1;
@@ -30,12 +32,21 @@ async function checksumOf(text: string): Promise<string> {
 
 /** Full JSON backup including unsynced state; import validates before replacing. */
 export async function exportFullBackup(): Promise<{ manifest: BackupManifest; blob: Blob }> {
-  const [categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps] = await Promise.all([
-    db.categories.toArray(), db.entries.toArray(), db.paths.toArray(), db.pathItems.toArray(),
-    db.progressEvents.toArray(), db.todos.toArray(), db.goals.toArray(), db.quickActions.toArray(),
-    db.settings.toArray(), db.pendingOps.toArray(),
-  ]);
-  const data = { categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps };
+  // Read every table from one IndexedDB snapshot so related rows cannot be mixed
+  // with changes made while a backup is being created.
+  const data = await db.transaction(
+    'r',
+    [db.categories, db.entries, db.paths, db.pathItems, db.progressEvents, db.todos, db.goals,
+      db.quickActions, db.settings, db.pendingOps, db.conflicts],
+    async () => {
+      const [categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps, conflicts] = await Promise.all([
+        db.categories.toArray(), db.entries.toArray(), db.paths.toArray(), db.pathItems.toArray(),
+        db.progressEvents.toArray(), db.todos.toArray(), db.goals.toArray(), db.quickActions.toArray(),
+        db.settings.toArray(), db.pendingOps.toArray(), db.conflicts.toArray(),
+      ]);
+      return { categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps, conflicts };
+    },
+  );
   const json = JSON.stringify(data);
   const counts = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.length]));
   const manifest: BackupManifest = {
@@ -59,6 +70,8 @@ const COLLECTIONS = [
   'todos', 'goals', 'quickActions', 'settings', 'pendingOps',
 ] as const;
 
+const CONFLICTS = 'conflicts' as const;
+
 const COLLECTION_SCHEMAS = {
   categories: CategoryDto.array(),
   entries: EntryDto.array(),
@@ -71,6 +84,21 @@ const COLLECTION_SCHEMAS = {
   settings: SettingDto.array(),
   pendingOps: PendingOpDto.array(),
 } as const;
+
+const ConflictBackupDto = z.object({
+  opId: z.string().uuid().optional(),
+  entity: z.string().min(1),
+  entityId: z.string().min(1),
+  localPayload: z.unknown(),
+  serverPayload: z.unknown(),
+  serverVersion: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  // Older local databases do not have this field, but preserve it when present
+  // so a grouped conflict can still be resolved as a group after restoration.
+  opGroupId: z.string().nullable().optional(),
+});
+
+type BackupData = Record<(typeof COLLECTIONS)[number], unknown[]> & { conflicts: unknown[] };
 
 function validateReferences(data: Record<string, unknown[]>): void {
   const categories = data.categories as Category[];
@@ -143,7 +171,7 @@ function validateReferences(data: Record<string, unknown[]>): void {
   }
 }
 
-function parseBackup(text: string): { manifest: BackupManifest; data: Record<string, unknown[]> } {
+function parseBackup(text: string): { manifest: BackupManifest; data: BackupData; rawData: Record<string, unknown> } {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -157,16 +185,32 @@ function parseBackup(text: string): { manifest: BackupManifest; data: Record<str
     throw new Error('不支持的备份格式版本，已拒绝导入。');
   }
   if (!parsed.data || typeof parsed.data !== 'object') throw new Error('备份缺少数据区，已拒绝导入。');
-  const data = parsed.data as Record<string, unknown[]>;
+  const rawData = parsed.data as Record<string, unknown>;
+  const data = { ...rawData, conflicts: rawData.conflicts ?? [] } as BackupData;
   for (const key of COLLECTIONS) {
     if (!Array.isArray(data[key])) throw new Error(`备份缺少 ${key} 数据表，已拒绝导入。`);
     if (manifestResult.data.counts[key] !== data[key]!.length) {
       throw new Error(`备份 ${key} 计数不一致，已拒绝导入。`);
     }
   }
+  // formatVersion 1 backups created before conflicts were included are valid.
+  // Once the table is present it is covered by both the count and validation.
+  if (rawData.conflicts !== undefined) {
+    if (!Array.isArray(rawData.conflicts)) throw new Error('备份 conflicts 数据表不合法，已拒绝导入。');
+    if (manifestResult.data.counts[CONFLICTS] !== rawData.conflicts.length) {
+      throw new Error('备份 conflicts 计数不一致，已拒绝导入。');
+    }
+  } else if (manifestResult.data.counts[CONFLICTS] !== undefined) {
+    throw new Error('备份缺少 conflicts 数据表，已拒绝导入。');
+  }
   for (const key of COLLECTIONS) {
     if (!COLLECTION_SCHEMAS[key].safeParse(data[key]).success) {
       throw new Error('备份 ' + key + ' 的字段不合法，已拒绝导入。');
+    }
+  }
+  for (const op of data.pendingOps as Array<{ entity: string; entityId: string; payload: unknown }>) {
+    if (!validateEntityPayload(op.entity, op.entityId, op.payload)) {
+      throw new Error('备份 pendingOps 的实体数据不合法，已拒绝导入。');
     }
   }
   for (const key of COLLECTIONS) {
@@ -176,17 +220,30 @@ function parseBackup(text: string): { manifest: BackupManifest; data: Record<str
       throw new Error(`备份 ${key} 的标识字段不合法或重复，已拒绝导入。`);
     }
   }
+  const conflictsResult = ConflictBackupDto.array().safeParse(data.conflicts);
+  if (!conflictsResult.success) throw new Error('备份 conflicts 的字段不合法，已拒绝导入。');
+  for (const conflict of conflictsResult.data) {
+    if (!validateEntityPayload(conflict.entity, conflict.entityId, conflict.localPayload) ||
+        !validateEntityPayload(conflict.entity, conflict.entityId, conflict.serverPayload)) {
+      throw new Error('备份 conflicts 的实体数据不合法，已拒绝导入。');
+    }
+  }
   validateReferences(data);
-  return { manifest: manifestResult.data as BackupManifest, data };
+  return { manifest: manifestResult.data as BackupManifest, data, rawData };
 }
 
-export async function inspectBackup(text: string): Promise<RestoreSummary> {
+async function parseAndVerifyBackup(text: string): Promise<ReturnType<typeof parseBackup>> {
   const parsed = parseBackup(text);
-  const json = JSON.stringify(parsed.data);
-  const actual = await checksumOf(json);
+  // Verify the exact file data before adding legacy defaults such as conflicts: [].
+  const actual = await checksumOf(JSON.stringify(parsed.rawData));
   if (actual !== parsed.manifest.checksum) {
     throw new Error('备份文件校验失败，可能已损坏，已拒绝导入。');
   }
+  return parsed;
+}
+
+export async function inspectBackup(text: string): Promise<RestoreSummary> {
+  const parsed = await parseAndVerifyBackup(text);
   const entries = (parsed.data.entries ?? []) as EntryRecord[];
   const dates = entries.map((e) => e.learningDate).sort();
   return {
@@ -196,44 +253,47 @@ export async function inspectBackup(text: string): Promise<RestoreSummary> {
 }
 
 export async function restoreBackup(text: string): Promise<void> {
-  await inspectBackup(text); // throws on invalid
-  const parsed = parseBackup(text);
-  // 本机身份与同步上下文不随业务备份替换
+  const parsed = await parseAndVerifyBackup(text); // throws before any mutation
+  // 本机身份与同步上下文不随业务备份替换，也不能从备份继承凭据。
   const preserveKeys = ['deviceId', 'serverUrl', 'loggedIn'];
-  const preserved = new Map<string, unknown>();
-  for (const key of preserveKeys) {
-    const row = await db.settings.get(key);
-    if (row) preserved.set(key, row.value);
-  }
+  const excludedBackupSettingKeys = [...preserveKeys, 'syncEpoch'];
   await db.transaction(
     'rw',
-    [db.categories, db.entries, db.paths, db.pathItems, db.progressEvents, db.todos, db.goals, db.quickActions, db.settings, db.pendingOps],
+    [db.categories, db.entries, db.paths, db.pathItems, db.progressEvents, db.todos, db.goals,
+      db.quickActions, db.settings, db.pendingOps, db.conflicts],
     async () => {
+      const preserved = new Map<string, unknown>();
+      for (const key of preserveKeys) {
+        const row = await db.settings.get(key);
+        if (row) preserved.set(key, row.value);
+      }
       await Promise.all([
         db.categories.clear(), db.entries.clear(), db.paths.clear(), db.pathItems.clear(),
         db.progressEvents.clear(), db.todos.clear(), db.goals.clear(), db.quickActions.clear(),
-        db.settings.clear(), db.pendingOps.clear(),
+        db.settings.clear(), db.pendingOps.clear(), db.conflicts.clear(),
       ]);
       await db.categories.bulkAdd(parsed.data.categories as Category[]);
       await db.entries.bulkAdd(parsed.data.entries as EntryRecord[]);
       await db.paths.bulkAdd(parsed.data.paths as LearningPath[]);
       await db.pathItems.bulkAdd(parsed.data.pathItems as PathItem[]);
-      await db.progressEvents.bulkAdd((parsed.data.progressEvents as ProgressEvent[]).map((event) => ({
-        ...event,
-        version: Number.isInteger(event.version) && event.version > 0 ? event.version : 1,
-      })));
+      await db.progressEvents.bulkAdd(parsed.data.progressEvents as ProgressEvent[]);
       await db.todos.bulkAdd(parsed.data.todos as Todo[]);
       await db.goals.bulkAdd(parsed.data.goals as Goal[]);
-      await db.quickActions.bulkAdd((parsed.data.quickActions as QuickAction[]).map((action) => ({
-        ...action,
-        version: Number.isInteger(action.version) && action.version > 0 ? action.version : 1,
-      })));
-      await db.settings.bulkAdd(parsed.data.settings as { key: string; value: unknown }[]);
+      await db.quickActions.bulkAdd(parsed.data.quickActions as QuickAction[]);
+      await db.settings.bulkAdd((parsed.data.settings as { key: string; value: unknown }[])
+        .filter((setting) => !excludedBackupSettingKeys.includes(setting.key)));
       for (const [key, value] of preserved) await db.settings.put({ key, value });
       // 业务数据已被替换，必须从服务端游标 0 重新对账，不能跳过旧操作。
       await db.settings.put({ key: 'lastSyncCursor', value: 0 });
       await db.settings.delete('lastSyncState');
       await db.pendingOps.bulkAdd(parsed.data.pendingOps as never[]);
+      await db.conflicts.bulkAdd(parsed.data.conflicts.map((row) => {
+        const { id: _id, ...conflict } = row as { id?: number } & Record<string, unknown>;
+        return conflict;
+      }) as never[]);
+      // In-flight sync responses carry the prior epoch and must not write into
+      // this newly restored data set.
+      await db.settings.put({ key: 'syncEpoch', value: crypto.randomUUID() });
     },
   );
 }

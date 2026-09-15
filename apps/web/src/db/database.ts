@@ -23,6 +23,8 @@ export interface Meta {
 }
 
 export interface ConflictCandidate {
+  opId?: string;
+  opGroupId?: string | null;
   id?: number;
   entity: string;
   entityId: string;

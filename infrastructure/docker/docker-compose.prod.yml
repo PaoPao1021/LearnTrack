@@ -1,0 +1,56 @@
+name: learntrack
+
+services:
+  learntrack:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile
+    restart: unless-stopped
+    env_file: ../../.env.production
+    environment:
+      LT_HOST: 0.0.0.0
+      LT_DATA_DIR: /data
+      LT_BACKUP_DIR: /backups
+      LT_USERNAME: ${LT_USERNAME:?LT_USERNAME must be set in .env.production}
+      LT_PASSWORD: ${LT_PASSWORD:?LT_PASSWORD must be set in .env.production}
+      LT_PASSWORD_SALT: ${LT_PASSWORD_SALT:?LT_PASSWORD_SALT must be set in .env.production}
+      LT_SESSION_SECRET: ${LT_SESSION_SECRET:?LT_SESSION_SECRET must be set in .env.production}
+      LT_COOKIE_SECURE: "true"
+      # Caddy is the only proxy hop and replaces incoming X-Forwarded-* headers.
+      LT_TRUST_PROXY: "1"
+    expose:
+      - "8787"
+    volumes:
+      - lt-data:/data
+      - lt-backups:/backups
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      learntrack:
+        condition: service_healthy
+    environment:
+      LT_DOMAIN: ${LT_DOMAIN:?LT_DOMAIN must be set in .env.production}
+      LT_ACME_EMAIL: ${LT_ACME_EMAIL:?LT_ACME_EMAIL must be set in .env.production}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  # Named volumes survive image rebuilds and `docker compose down`.
+  lt-data:
+  lt-backups:
+  caddy-data:
+  caddy-config:

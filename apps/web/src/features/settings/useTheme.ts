@@ -95,11 +95,30 @@ export function useTheme() {
   const [scheduleEnd, setScheduleEndState] = useState<string>('07:00');
 
   useEffect(() => {
-    void getSetting('theme', DEFAULT_SETTINGS.theme).then(setThemeState);
-    void getSetting('accentColor', DEFAULT_SETTINGS.accentColor).then(setAccentState);
-    void getSetting('themeScheduleEnabled', false).then(setScheduleEnabledState);
-    void getSetting('themeScheduleStart', '19:00').then(setScheduleStartState);
-    void getSetting('themeScheduleEnd', '07:00').then(setScheduleEndState);
+    let active = true;
+    let revision = 0;
+    const refresh = async () => {
+      const current = ++revision;
+      const [nextTheme, nextAccent, enabled, start, end] = await Promise.all([
+        getSetting('theme', DEFAULT_SETTINGS.theme), getSetting('accentColor', DEFAULT_SETTINGS.accentColor),
+        getSetting('themeScheduleEnabled', false), getSetting('themeScheduleStart', '19:00'),
+        getSetting('themeScheduleEnd', '07:00'),
+      ]);
+      if (!active || current !== revision) return;
+      setThemeState(nextTheme);
+      setAccentState(nextAccent);
+      setScheduleEnabledState(enabled);
+      setScheduleStartState(start);
+      setScheduleEndState(end);
+    };
+    const onThemeChange = () => { void refresh(); };
+    void refresh();
+    // Header and settings use separate hook instances; keep their controls in sync.
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    return () => {
+      active = false;
+      window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    };
   }, []);
 
   const setTheme = (t: string) => {

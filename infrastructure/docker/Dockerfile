@@ -1,6 +1,6 @@
 FROM node:24-alpine AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
 COPY database ./database
@@ -10,14 +10,17 @@ RUN npm ci --no-audit --no-fund \
 FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
-COPY --from=build /app/apps/api ./apps/api
+# Install only the API workspace's production dependency graph. This keeps Vite,
+# Vitest, TypeScript, and browser-only dependencies out of the runtime image.
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY packages/contracts/package.json ./packages/contracts/package.json
+RUN npm ci --omit=dev --workspace=@learntrack/api --include-workspace-root --no-audit --no-fund \
+  && npm cache clean --force
+COPY --from=build /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY --from=build /app/database ./database
-# 前端静态资源由 API 同源提供（也可改用独立 Nginx 容器）
-RUN mkdir -p /app/apps/api/src && echo ok
 EXPOSE 8787
 WORKDIR /app/apps/api
 CMD ["node", "dist/app/server.js"]

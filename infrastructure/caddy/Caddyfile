@@ -1,0 +1,16 @@
+{
+  email {$LT_ACME_EMAIL}
+}
+
+{$LT_DOMAIN} {
+  encode zstd gzip
+
+  # Caddy is the edge proxy. Replace, rather than append, forwarded headers so
+  # browser-provided X-Forwarded-For values cannot influence API rate limiting.
+  reverse_proxy learntrack:8787 {
+    header_up Host {host}
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}

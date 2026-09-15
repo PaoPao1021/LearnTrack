@@ -9,13 +9,42 @@ import { config } from '../db/config.js';
 import {
   sessionValid, createSession, destroySession, checkRateLimit, recordFailedLogin, timingSafeEqual,
 } from '../middleware/session.js';
-import { SyncPushRequest, LoginRequest } from '@learntrack/contracts';
+import { SyncPushRequest, LoginRequest, validateEntityPayload } from '@learntrack/contracts';
 import { makeBackup } from './backups.js';
+
+/** Parse the only proxy configurations that keep the forwarding boundary explicit. */
+export function trustProxyFromEnv(value = process.env.LT_TRUST_PROXY): false | string[] | ((address: string, hop: number) => boolean) {
+  if (value == null || value.trim() === '') return false;
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    return Number.isSafeInteger(hops) && hops > 0 ? (_address, hop) => hop < hops : false;
+  }
+  if (value.trim().toLowerCase() === 'true') {
+    throw new Error('LT_TRUST_PROXY 不能为 true；请设置代理跳数或地址列表');
+  }
+  const addresses = value.split(',').map((address) => address.trim()).filter(Boolean);
+  return addresses.length === 0 ? false : addresses;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
+}
+
+/** Match the version rewrite performed when an operation is first accepted. */
+function payloadForReplayComparison(entity: string, baseVersion: number | null, payload: unknown): unknown {
+  if (payload === null || entity === 'settings') return payload;
+  return { ...(payload as Record<string, unknown>), version: (baseVersion ?? 0) + 1 };
+}
 
 export function buildServer(db: InstanceType<typeof DatabaseSync>) {
   const app = Fastify({
     logger: { level: process.env.LT_LOG_LEVEL ?? 'info' },
-    trustProxy: process.env.LT_TRUST_PROXY === 'false' ? false : true,
+    trustProxy: trustProxyFromEnv(),
   });
   void app.register(cookie);
   // Serve the built web app from the same origin (single-site deployment)
@@ -38,10 +67,10 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
 
   // ---- auth guard for everything except health/login
   app.addHook('onRequest', async (request, reply) => {
-    const url = request.url;
+    const url = request.url.split('?', 1)[0]!;
     // only API endpoints require a session; static app shell is public
     if (!url.startsWith('/api/')) return;
-    if (url.startsWith('/api/v1/health') || url.startsWith('/api/v1/auth/login')) return;
+    if (url === '/api/v1/health' || url === '/api/v1/auth/login') return;
     if (!sessionValid(db, config, request)) {
       void reply.code(401).send({ error: '会话无效或已过期，请重新登录。离线设备可继续本地记账。' });
     }
@@ -89,17 +118,30 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
   app.post('/api/v1/sync/push', async (request, reply) => {
     const parsed = SyncPushRequest.safeParse(request.body);
     if (!parsed.success) return void reply.code(400).send({ error: '同步请求格式不正确', detail: parsed.error.flatten() });
-    const { deviceId, ops } = parsed.data;
+    const { ops } = parsed.data;
     const malformedOp = ops.find((op) => {
-      if (op.deviceId !== deviceId) return true;
-      if (op.payload == null) return false;
-      if (typeof op.payload !== 'object' || Array.isArray(op.payload)) return true;
-      const payload = op.payload as Record<string, unknown>;
-      if (op.entity === 'settings') return payload['key'] !== op.entityId;
-      return payload['id'] !== op.entityId;
+      return !validateEntityPayload(op.entity, op.entityId, op.payload);
     });
     if (malformedOp) {
-      return void reply.code(400).send({ error: '同步操作的设备或实体标识不一致' });
+      return void reply.code(400).send({ error: '同步操作的实体负载无效或实体标识不一致' });
+    }
+    const opIds = new Set<string>();
+    if (ops.some((op) => opIds.has(op.opId) || !opIds.add(op.opId))) {
+      return void reply.code(400).send({ error: '一次同步请求中不能包含重复的 opId' });
+    }
+    const closedGroupIds = new Set<string>();
+    let activeGroupId: string | null = null;
+    for (const op of ops) {
+      if (op.opGroupId === null) {
+        if (activeGroupId !== null) closedGroupIds.add(activeGroupId);
+        activeGroupId = null;
+      } else if (op.opGroupId !== activeGroupId) {
+        if (activeGroupId !== null) closedGroupIds.add(activeGroupId);
+        if (closedGroupIds.has(op.opGroupId)) {
+          return void reply.code(400).send({ error: '同一 opGroupId 必须在请求中连续出现' });
+        }
+        activeGroupId = op.opGroupId;
+      }
     }
     const appliedOpIds: string[] = [];
     const conflicts: { opId: string; entity: string; entityId: string; serverVersion: number; serverPayload: unknown }[] = [];
@@ -108,51 +150,111 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
       `INSERT OR IGNORE INTO sync_ops (op_id, device_id, entity, entity_id, base_version, payload, op_group_id, client_timestamp, server_timestamp)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    const getExistingOp = db.prepare(
+      'SELECT seq, device_id, entity, entity_id, base_version, payload, op_group_id, client_timestamp FROM sync_ops WHERE op_id = ?',
+    );
+    const hasPersistedGroup = db.prepare('SELECT 1 AS found FROM sync_ops WHERE op_group_id = ? LIMIT 1');
     const getVersion = db.prepare('SELECT version, deleted FROM entity_versions WHERE entity = ? AND entity_id = ?');
+    const getPayload = db.prepare(
+      'SELECT payload FROM sync_ops WHERE entity = ? AND entity_id = ? ORDER BY seq DESC LIMIT 1',
+    );
     const upsertVersion = db.prepare(
       `INSERT INTO entity_versions (entity, entity_id, version, deleted) VALUES (?, ?, ?, ?)
        ON CONFLICT(entity, entity_id) DO UPDATE SET version = excluded.version, deleted = excluded.deleted`,
     );
 
+    for (const op of ops) {
+      const existing = getExistingOp.get(op.opId) as {
+        device_id: string; entity: string; entity_id: string; base_version: number | null;
+        payload: string | null; op_group_id: string | null; client_timestamp: string;
+      } | undefined;
+      if (existing) {
+        const replayPayload = payloadForReplayComparison(op.entity, op.baseVersion, op.payload);
+        const payloadMatches = existing.payload === null
+          ? replayPayload === null
+          : replayPayload !== null && canonicalJson(JSON.parse(existing.payload)) === canonicalJson(replayPayload);
+        if (
+          existing.device_id !== op.deviceId || existing.entity !== op.entity || existing.entity_id !== op.entityId
+          || existing.base_version !== op.baseVersion || existing.op_group_id !== op.opGroupId
+          || existing.client_timestamp !== op.clientTimestamp || !payloadMatches
+        ) {
+          return void reply.code(400).send({ error: '重放的 opId 与已存操作内容不一致' });
+        }
+        continue;
+      }
+      // An all-existing replay is safe. A new op cannot be appended to an old
+      // group because it would make that group non-contiguous in the log.
+      if (op.opGroupId !== null && hasPersistedGroup.get(op.opGroupId)) {
+        return void reply.code(400).send({ error: 'opGroupId 已被使用，不能追加新的操作' });
+      }
+    }
+    const groups: (typeof ops)[] = [];
+    for (let index = 0; index < ops.length;) {
+      const first = ops[index]!;
+      if (first.opGroupId === null) {
+        groups.push([first]);
+        index += 1;
+        continue;
+      }
+      let end = index + 1;
+      while (end < ops.length && ops[end]!.opGroupId === first.opGroupId) end += 1;
+      groups.push(ops.slice(index, end));
+      index = end;
+    }
+    const conflictFor = (op: (typeof ops)[number]) => {
+      const ver = getVersion.get(op.entity, op.entityId) as { version: number } | undefined;
+      const serverRow = getPayload.get(op.entity, op.entityId) as { payload: string | null } | undefined;
+      return {
+        opId: op.opId,
+        entity: op.entity,
+        entityId: op.entityId,
+        serverVersion: ver?.version ?? 0,
+        serverPayload: serverRow?.payload ? JSON.parse(serverRow.payload) : null,
+      };
+    };
+
     db.exec('BEGIN');
     try {
-      for (const op of ops) {
-        const deleted = op.payload == null || ((op.payload as { deletedAt?: string | null } | null)?.deletedAt != null);
-        const existingOp = db.prepare('SELECT seq FROM sync_ops WHERE op_id = ?').get(op.opId);
-        if (existingOp) {
-          // idempotent replay: same op already applied once
+      for (const [groupIndex, group] of groups.entries()) {
+        const savepoint = `sync_group_${groupIndex}`;
+        db.exec(`SAVEPOINT ${savepoint}`);
+        const pending = group.filter((op) => !getExistingOp.get(op.opId));
+        if (pending.length === 0) {
+          appliedOpIds.push(...group.map((op) => op.opId));
+          db.exec(`RELEASE ${savepoint}`);
+          continue;
+        }
+        const stagedVersions = new Map<string, number>();
+        let hasConflict = false;
+        for (const op of pending) {
+          const key = `${op.entity}\u0000${op.entityId}`;
+          const serverVersion = stagedVersions.get(key)
+            ?? ((getVersion.get(op.entity, op.entityId) as { version: number } | undefined)?.version ?? 0);
+          if (op.baseVersion !== (serverVersion === 0 ? null : serverVersion)) hasConflict = true;
+          stagedVersions.set(key, serverVersion + 1);
+        }
+        if (hasConflict) {
+          db.exec(`ROLLBACK TO ${savepoint}`);
+          db.exec(`RELEASE ${savepoint}`);
+          conflicts.push(...pending.map(conflictFor));
+          continue;
+        }
+        for (const op of pending) {
+          const ver = getVersion.get(op.entity, op.entityId) as { version: number } | undefined;
+          const nextVersion = (ver?.version ?? 0) + 1;
+          const deleted = op.payload == null || ((op.payload as { deletedAt?: string | null })?.deletedAt != null);
+          const authoritativePayload = op.payload != null && op.entity !== 'settings'
+            ? { ...(op.payload as Record<string, unknown>), version: nextVersion }
+            : op.payload;
+          insertOp.run(
+            op.opId, op.deviceId, op.entity, op.entityId, op.baseVersion,
+            authoritativePayload == null ? null : JSON.stringify(authoritativePayload),
+            op.opGroupId, op.clientTimestamp, new Date().toISOString(),
+          );
+          upsertVersion.run(op.entity, op.entityId, nextVersion, deleted ? 1 : 0);
           appliedOpIds.push(op.opId);
-          continue;
         }
-        const ver = getVersion.get(op.entity, op.entityId) as { version: number; deleted: number } | undefined;
-        const serverVersion = ver?.version ?? 0;
-        // Optimistic locking requires an exact base version. Accepting a future
-        // baseVersion would let a corrupt client bypass conflict detection.
-        const expectedBaseVersion = serverVersion === 0 ? null : serverVersion;
-        if (op.baseVersion !== expectedBaseVersion) {
-          const serverRow = db.prepare(
-            'SELECT payload FROM sync_ops WHERE entity = ? AND entity_id = ? ORDER BY seq DESC LIMIT 1',
-          ).get(op.entity, op.entityId) as { payload: string | null } | undefined;
-          conflicts.push({
-            opId: op.opId, entity: op.entity, entityId: op.entityId,
-            serverVersion,
-            serverPayload: serverRow?.payload ? JSON.parse(serverRow.payload) : null,
-          });
-          continue;
-        }
-        const nextVersion = serverVersion + 1;
-        // The server owns the authoritative version. Normalizing it here keeps a
-        // malformed client payload from poisoning every device that pulls it.
-        const authoritativePayload = op.payload != null && op.entity !== 'settings'
-          ? { ...(op.payload as Record<string, unknown>), version: nextVersion }
-          : op.payload;
-        const payloadStr = authoritativePayload == null ? null : JSON.stringify(authoritativePayload);
-        insertOp.run(
-          op.opId, deviceId, op.entity, op.entityId, op.baseVersion,
-          payloadStr, op.opGroupId, op.clientTimestamp, new Date().toISOString(),
-        );
-        upsertVersion.run(op.entity, op.entityId, nextVersion, deleted ? 1 : 0);
-        appliedOpIds.push(op.opId);
+        db.exec(`RELEASE ${savepoint}`);
       }
       db.exec('COMMIT');
     } catch (err) {
@@ -169,9 +271,17 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
     const q = request.query as { cursor?: string };
     const requestedCursor = Number(q.cursor ?? 0);
     const cursor = Number.isSafeInteger(requestedCursor) && requestedCursor >= 0 ? requestedCursor : 0;
-    const rows = db.prepare(
+    let rows = db.prepare(
       'SELECT seq, op_id, device_id, entity, entity_id, base_version, payload, op_group_id, client_timestamp, server_timestamp FROM sync_ops WHERE seq > ? ORDER BY seq LIMIT 2000',
     ).all(cursor) as Record<string, unknown>[];
+    const last = rows[rows.length - 1];
+    if (rows.length === 2000 && last?.op_group_id != null) {
+      const tail = db.prepare(
+        `SELECT seq, op_id, device_id, entity, entity_id, base_version, payload, op_group_id, client_timestamp, server_timestamp
+         FROM sync_ops WHERE seq > ? AND op_group_id = ? ORDER BY seq`,
+      ).all(last['seq'] as number, last['op_group_id'] as string) as Record<string, unknown>[];
+      rows = rows.concat(tail);
+    }
     // 游标取本批最后一条的 seq：积压超过一页时客户端可继续拉取，不跳数据
     const batchCursor = rows.length ? Number(rows[rows.length - 1]!['seq']) : cursor;
     return reply.send({

@@ -149,11 +149,19 @@ npm run dev:web
 ### 可选：启动多端同步服务（API）
 
 ```bash
-# 启动配套的 Fastify 同步服务端（默认运行在 http://localhost:8787）
-npm run dev:api
+# 在仓库根目录创建配置，修改其中的密码、盐与会话密钥
+cp .env.example .env
+# 完成上面的 npm run build 后，显式加载配置启动 API
+node --env-file=.env apps/api/dist/app/server.js
 ```
 
 > **说明**：无需启动 API 服务亦可完整使用全部时间记账、图表分析与数据导出功能。
+
+在设置页将同步地址填为 `/` 并登录即可经 Vite 代理访问 API；留空关闭同步。
+
+### 生产部署
+
+详见 [部署与恢复指南](DEPLOYMENT.md)：提供 Linux/ECS + Docker Compose + Caddy 的同源 HTTPS 配置、环境变量模板、SQLite 一致快照及恢复脚本。生产 API 不直接暴露端口，真实环境变量文件已加入 Git 忽略规则。
 
 ---
 
@@ -170,12 +178,12 @@ npm test
 ```
 
 ```text
-✓ Production build: 2516 modules transformed, built in 1.62s
-✓ packages/domain: 1 file, 14 tests passed (335ms)
-✓ apps/api:         1 file,  3 tests passed (983ms)
-✓ apps/web:         4 files, 12 tests passed (899ms)
+✓ Production build: 2517 modules transformed
+✓ packages/domain: 1 file, 14 tests passed
+✓ apps/api:         1 file, 10 tests passed
+✓ apps/web:         5 files, 34 tests passed
 ────────────────────────────────────────────────────
-Total: 6 test files, 29 tests passed
+Total: 7 test files, 58 tests passed
 ```
 
 ---

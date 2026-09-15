@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+!.env.production.example
+node_modules
+**/node_modules
+**/dist
+var
+coverage
+.DS_Store
+npm-debug.log*
+docs/screenshots

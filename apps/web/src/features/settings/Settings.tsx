@@ -251,7 +251,7 @@ function CategorySection() {
   };
 
   const renderRow = (c: Category, parentName?: string) => (
-    <li key={c.id} className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-sm ${c.archived ? 'text-slate-400' : ''}`}>
+    <div className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-sm ${c.archived ? 'text-slate-400' : ''}`}>
       <span className="flex items-center gap-2">
         <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
         {parentName ? `${parentName} / ` : ''}{c.name}
@@ -263,7 +263,7 @@ function CategorySection() {
           <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => void archiveCategory(c.id)}>{t('cat.archive')}</button>
         )}
       </span>
-    </li>
+    </div>
   );
 
   return (
@@ -293,7 +293,7 @@ function CategorySection() {
               {subjects.filter((s) => s.parentId === m.id).map((s) => (
                 <li key={s.id}>
                   {renderRow(s)}
-                  <ul className="ml-4">{activities.filter((a) => a.parentId === s.id).map((a) => renderRow(a))}</ul>
+                  <ul className="ml-4">{activities.filter((a) => a.parentId === s.id).map((a) => <li key={a.id}>{renderRow(a)}</li>)}</ul>
                 </li>
               ))}
             </ul>
@@ -381,8 +381,12 @@ function SyncSection() {
         <label className="label" htmlFor="sync-server">{t('sync.serverLabel')}</label>
         <div className="flex gap-2">
           <input id="sync-server" className="input" placeholder={t('sync.serverPlaceholder')} value={server} onChange={(e) => setServer(e.target.value)} />
-          <button className="btn-ghost" onClick={async () => { await setServerUrl(server); setMessage(t('sync.saved')); void refresh(); }}>{t('common.save')}</button>
+          <button className="btn-ghost" onClick={async () => {
+            try { await setServerUrl(server); setMessage(t('sync.saved')); await refresh(); }
+            catch (err) { setMessage(translateError(err, t)); }
+          }}>{t('common.save')}</button>
         </div>
+        <p className="mt-2 text-xs opacity-60">{t('sync.serverHint')}</p>
       </div>
       {state?.loggedIn ? (
         <div className="mb-3 flex gap-2">

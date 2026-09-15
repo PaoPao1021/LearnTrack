@@ -128,13 +128,14 @@ export async function updateEntry(id: string, patch: Partial<EntryRecord>): Prom
  */
 export async function deleteEntry(id: string, undoProgress: boolean): Promise<string | null> {
   const deviceId = await ensureDeviceId();
+  const groupId = uuid2();
   let warning: string | null = null;
   await db.transaction('rw', [db.entries, db.paths, db.progressEvents, db.pendingOps], async () => {
     const existing = await db.entries.get(id);
     if (!existing) return;
     const updated: EntryRecord = { ...existing, deletedAt: nowIso(), updatedAt: nowIso(), version: bumpVersion(existing.version) };
     await db.entries.put(updated);
-    await enqueueOp('entry', id, updated, existing.version, null, deviceId);
+    await enqueueOp('entry', id, updated, existing.version, groupId, deviceId);
 
     if (undoProgress && existing.linkedPathId) {
       const events = await db.progressEvents.where('entryId').equals(id).filter((e) => !e.undoneAt).toArray();
@@ -145,11 +146,12 @@ export async function deleteEntry(id: string, undoProgress: boolean): Promise<st
         if (totalDelta !== 0) {
           const updatedPath: LearningPath = { ...path, completedQuantity: nextCompleted, updatedAt: nowIso(), version: bumpVersion(path.version) };
           await db.paths.put(updatedPath);
-          await enqueueOp('path', path.id, updatedPath, path.version, null, deviceId);
+          if (events.length + 2 > 1000) throw new AppError('sync.errGroupTooLarge');
+          await enqueueOp('path', path.id, updatedPath, path.version, groupId, deviceId);
           for (const ev of events) {
             const undone: ProgressEvent = { ...ev, undoneAt: nowIso(), version: bumpVersion(ev.version) };
             await db.progressEvents.put(undone);
-            await enqueueOp('progressEvent', ev.id, undone, ev.version, null, deviceId);
+            await enqueueOp('progressEvent', ev.id, undone, ev.version, groupId, deviceId);
           }
         } else {
           warning = 'warn.noProgressToUndo';
@@ -220,6 +222,7 @@ export async function createPath(input: {
 }
 
 export async function addPathItems(pathId: string, titles: string[]): Promise<void> {
+  if (titles.length > 1000) throw new AppError('sync.errGroupTooLarge');
   const deviceId = await ensureDeviceId();
   await db.transaction('rw', db.paths, db.pathItems, db.pendingOps, async () => {
     const path = await db.paths.get(pathId);

@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LearningPath } from '@learntrack/domain';
 import { db } from '../db/database';
-import { addQuantity, addQuickAction, removeQuickAction, saveEntryWithProgress } from './commands';
+import { addPathItems, addQuantity, addQuickAction, deleteEntry, removeQuickAction, saveEntryWithProgress } from './commands';
 
 const now = '2026-09-10T00:00:00.000Z';
 
@@ -33,6 +33,13 @@ describe('atomic local commands', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ quantityDelta: -2, version: 1 });
     expect(await db.pendingOps.count()).toBe(3);
+    await db.pendingOps.clear();
+    await deleteEntry(result.entry.id, true);
+    const undoOps = await db.pendingOps.toArray();
+    expect(undoOps).toHaveLength(3);
+    expect(new Set(undoOps.map((row) => row.opGroupId)).size).toBe(1);
+    expect(undoOps[0]!.opGroupId).toBeTruthy();
+    expect((await db.paths.get(path.id))?.completedQuantity).toBe(2);
   });
 
   it('serializes concurrent entry progress updates without losing a delta', async () => {
@@ -90,5 +97,11 @@ describe('atomic local commands', () => {
     await removeQuickAction(action!.id);
     const deletion = await db.pendingOps.toCollection().first();
     expect(deletion).toMatchObject({ entity: 'quickAction', entityId: action!.id, baseVersion: 1, payload: null });
+  });
+
+  it('rejects oversized chapter groups before writing local data', async () => {
+    await expect(addPathItems(crypto.randomUUID(), Array(1001).fill('chapter'))).rejects.toThrow('sync.errGroupTooLarge');
+    expect(await db.pathItems.count()).toBe(0);
+    expect(await db.pendingOps.count()).toBe(0);
   });
 });
