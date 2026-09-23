@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import { useActivities, labelOf, type ActivityOption } from './useActivities';
+import { useActivities, pathLabelOf, type ActivityOption } from './useActivities';
 import { useI18n } from '../../i18n';
 
 export interface ActivityComboboxProps {
@@ -47,7 +47,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
     return () => document.removeEventListener('mousedown', onDocDown);
   }, []);
 
-  useEffect(() => { setActive(0); }, [query]);
+  useEffect(() => { setActive(0); }, [query, activities]);
 
   useEffect(() => {
     if (!open) return;
@@ -75,12 +75,12 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           aria-autocomplete="list"
           aria-activedescendant={open && matches.length > 0 ? `${listId}-opt-${active}` : undefined}
           className="input !pl-9 !pr-8"
-          placeholder={selected ? `${labelOf(selected)} · ${selected.activity.name}` : (placeholder ?? t('combo.placeholder'))}
+          placeholder={selected ? pathLabelOf(selected) : (placeholder ?? t('combo.placeholder'))}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, matches.length - 1)); }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((a) => Math.max(0, Math.min(a + 1, matches.length - 1))); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
             else if (e.key === 'Enter') {
               if (e.nativeEvent.isComposing) return;
@@ -121,7 +121,7 @@ export function ActivityCombobox({ value, onChange, placeholder, ariaLabel, inpu
           }}
         >
           {matches.map((o, i) => {
-            const label = `${o.major.name} / ${o.subject.name} / ${o.activity.name}`;
+            const label = pathLabelOf(o);
             return (
               <li
                 key={o.activity.id}

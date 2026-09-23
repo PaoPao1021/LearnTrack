@@ -188,11 +188,20 @@ export async function archiveCategory(id: string): Promise<void> {
 }
 
 export async function renameCategory(id: string, name: string): Promise<void> {
+  await updateCategory(id, { name });
+}
+
+export async function updateCategory(id: string, patch: { name?: string; color?: string }): Promise<void> {
   const deviceId = await ensureDeviceId();
   await db.transaction('rw', db.categories, db.pendingOps, async () => {
     const existing = await db.categories.get(id);
     if (!existing) return;
-    const updated: Category = { ...existing, name, updatedAt: nowIso(), version: bumpVersion(existing.version) };
+    const name = patch.name?.trim() ?? existing.name;
+    const color = patch.color ?? existing.color;
+    if (!name) throw new AppError('err.categoryName');
+    if (!/^#[0-9a-f]{6}$/i.test(color)) throw new AppError('err.categoryColor');
+    if (name === existing.name && color.toLowerCase() === existing.color.toLowerCase()) return;
+    const updated: Category = { ...existing, name, color, updatedAt: nowIso(), version: bumpVersion(existing.version) };
     await db.categories.put(updated);
     await enqueueOp('category', id, updated, existing.version, null, deviceId);
   });
@@ -308,10 +317,12 @@ export async function addTodo(input: { title: string; subjectId: string | null; 
 
 export async function toggleTodo(todo: Todo): Promise<void> {
   const deviceId = await ensureDeviceId();
-  const updated: Todo = { ...todo, done: !todo.done, updatedAt: nowIso(), version: bumpVersion(todo.version) };
   await db.transaction('rw', db.todos, db.pendingOps, async () => {
+    const current = await db.todos.get(todo.id);
+    if (!current || current.deletedAt) return;
+    const updated: Todo = { ...current, done: !current.done, updatedAt: nowIso(), version: bumpVersion(current.version) };
     await db.todos.put(updated);
-    await enqueueOp('todo', todo.id, updated, todo.version, null, deviceId);
+    await enqueueOp('todo', todo.id, updated, current.version, null, deviceId);
   });
 }
 

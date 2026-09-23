@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DateKey, validateEntityPayload } from '@learntrack/contracts';
 import type { Category } from '@learntrack/domain';
 import { db, type PendingOp } from '../db/database';
-import { applyRemoteOps, getServerUrl, login, selectPushBatch, setServerUrl, syncNow } from './sync';
+import { addTodo, toggleTodo } from './commands';
+import { enqueueOp } from './queue';
+import { applyRemoteOps, getServerUrl, login, previewSync, selectPushBatch, setServerUrl, syncNow } from './sync';
 import { resolveConflict } from './conflicts';
 
 const now = '2026-09-15T00:00:00.000Z';
@@ -181,6 +183,68 @@ describe('safe client synchronization', () => {
     expect((await syncNow()).lastError).toContain('sync.errServerChanged');
     expect(await db.categories.count()).toBe(0);
     expect((await db.settings.get('lastSyncCursor'))?.value).toBe(0);
+  });
+
+  it('uploads restored device queues separately within one serialized sync', async () => {
+    await enableSync();
+    await enqueueOp('todo', 'old', null, 1, null, 'restored-device');
+    await enqueueOp('todo', 'new', null, 1, null, 'current-device');
+    const devices: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/sync/push')) {
+        const body = JSON.parse(init!.body as string) as { deviceId: string; ops: Array<{ deviceId: string; opId: string }> };
+        devices.push(body.deviceId);
+        expect(body.ops.every((pending) => pending.deviceId === body.deviceId)).toBe(true);
+        return json({ appliedOpIds: body.ops.map((pending) => pending.opId), conflicts: [], cursor: devices.length });
+      }
+      return json({ ops: [], cursor: devices.length });
+    }));
+    await Promise.all([syncNow(), syncNow()]);
+    expect(devices).toEqual(['restored-device', 'current-device']);
+    expect(await db.pendingOps.count()).toBe(0);
+  });
+
+  it('preserves an edit made while the push response is in flight', async () => {
+    await enableSync();
+    await addTodo({ title: '学习', subjectId: null, scheduledDate: null, dueDate: null });
+    const todo = (await db.todos.toArray())[0]!;
+    let remoteOp: Record<string, unknown> | undefined;
+    let pulled = false;
+    let pushCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/sync/push')) {
+        const body = JSON.parse(init!.body as string) as { ops: Array<Record<string, unknown>> };
+        remoteOp = { ...body.ops[0], serverTimestamp: new Date().toISOString() };
+        if (pushCount++ === 0) await toggleTodo(todo);
+        return json({ appliedOpIds: [body.ops[0]!.opId], conflicts: [], cursor: 1 });
+      }
+      const ops = remoteOp && !pulled ? [remoteOp] : [];
+      pulled = true;
+      return json({ ops, cursor: remoteOp ? 1 : 0 });
+    }));
+    expect((await syncNow()).lastError).toBeNull();
+    expect((await db.todos.get(todo.id))?.done).toBe(true);
+    expect(await db.pendingOps.count()).toBe(0);
+  });
+
+  it('previews the newest queued change without mutating local data', async () => {
+    await enableSync();
+    await enqueueOp('todo', 'local-todo', { id: 'local-todo', title: '本地待办' }, null, null, 'device');
+    const cursorBefore = (await db.settings.get('lastSyncCursor'))?.value;
+    const remoteTimestamp = new Date(Date.now() + 1000).toISOString();
+    vi.stubGlobal('fetch', vi.fn(async () => json({
+      cursor: 4,
+      ops: [{
+        opId: crypto.randomUUID(), deviceId: 'other', entity: 'category', entityId: crypto.randomUUID(),
+        baseVersion: 1, payload: { id: crypto.randomUUID(), name: '远端科目' }, opGroupId: null,
+        clientTimestamp: remoteTimestamp, serverTimestamp: remoteTimestamp,
+      }],
+    })));
+    const preview = await previewSync();
+    expect(preview).toMatchObject({ uploadCount: 1, downloadCount: 1, latest: { direction: 'download', entity: 'category' } });
+    expect(await db.pendingOps.count()).toBe(1);
+    expect(await db.categories.count()).toBe(0);
+    expect((await db.settings.get('lastSyncCursor'))?.value).toBe(cursorBefore);
   });
 });
 

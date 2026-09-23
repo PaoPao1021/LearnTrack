@@ -2,7 +2,10 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LearningPath } from '@learntrack/domain';
 import { db } from '../db/database';
-import { addPathItems, addQuantity, addQuickAction, deleteEntry, removeQuickAction, saveEntryWithProgress } from './commands';
+import {
+  addCategory, addPathItems, addQuantity, addQuickAction, addTodo, deleteEntry, deleteTodo,
+  removeQuickAction, saveEntryWithProgress, toggleTodo, updateCategory,
+} from './commands';
 
 const now = '2026-09-10T00:00:00.000Z';
 
@@ -97,6 +100,28 @@ describe('atomic local commands', () => {
     await removeQuickAction(action!.id);
     const deletion = await db.pendingOps.toCollection().first();
     expect(deletion).toMatchObject({ entity: 'quickAction', entityId: action!.id, baseVersion: 1, payload: null });
+  });
+
+  it('toggles against current state without losing concurrent changes or reviving deleted todos', async () => {
+    await addTodo({ title: '学习', subjectId: null, scheduledDate: null, dueDate: null });
+    const stale = (await db.todos.toArray())[0]!;
+    await db.todos.update(stale.id, { title: '新标题' });
+    await Promise.all([toggleTodo(stale), toggleTodo(stale)]);
+    expect(await db.todos.get(stale.id)).toMatchObject({ done: false, version: 3, title: '新标题' });
+    expect((await db.pendingOps.toArray()).map((pending) => pending.baseVersion)).toEqual([null, 1, 2]);
+    await deleteTodo(stale.id);
+    await toggleTodo(stale);
+    expect((await db.todos.get(stale.id))?.deletedAt).toBeTruthy();
+  });
+
+  it('updates an existing category name and color in one versioned operation', async () => {
+    const category = await addCategory('major', null, '数学', '#64748b');
+    await db.pendingOps.clear();
+    await updateCategory(category.id, { name: '数学与逻辑', color: '#8b5cf6' });
+    expect(await db.categories.get(category.id)).toMatchObject({ name: '数学与逻辑', color: '#8b5cf6', version: 2 });
+    expect(await db.pendingOps.toArray()).toEqual([
+      expect.objectContaining({ entity: 'category', entityId: category.id, baseVersion: 1 }),
+    ]);
   });
 
   it('rejects oversized chapter groups before writing local data', async () => {

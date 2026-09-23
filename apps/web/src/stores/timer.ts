@@ -80,6 +80,7 @@ export const useTimer = create<TimerState>((set, get) => ({
   lastTickAt: Date.now(),
 
   start: (activityId, label, countdownSeconds = null) => {
+    if (get().stopping || get().status !== 'idle') return;
     const s: TimerState = {
       ...get(),
       status: 'running',
@@ -98,7 +99,7 @@ export const useTimer = create<TimerState>((set, get) => ({
 
   pause: () => {
     const s = get();
-    if (s.status !== 'running' || !s.startedAt) return;
+    if (s.stopping || s.status !== 'running' || !s.startedAt) return;
     const next = { ...s, status: 'paused' as const, pausedAt: Date.now() };
     savePersisted(next);
     set(next);
@@ -106,7 +107,7 @@ export const useTimer = create<TimerState>((set, get) => ({
 
   resume: () => {
     const s = get();
-    if (s.status !== 'paused' || !s.pausedAt) return;
+    if (s.stopping || s.status !== 'paused' || !s.pausedAt) return;
     const next = {
       ...s,
       status: 'running' as const,
@@ -167,6 +168,7 @@ export const useTimer = create<TimerState>((set, get) => ({
 
   switchActivity: async (activityId, label) => {
     const s = get();
+    if (s.stopping) return;
     if (s.status === 'idle' || !s.startedAt) {
       get().start(activityId, label);
       return;

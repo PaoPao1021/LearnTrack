@@ -65,7 +65,7 @@ describe('local backup and CSV export', () => {
     await db.entries.add(entry);
 
     const { blob } = await exportFullBackup();
-    await expect(inspectBackup(await blob.text())).rejects.toThrow('不存在的活动');
+    await expect(inspectBackup(await blob.text())).rejects.toThrow('不存在的分类');
   });
 
   it('round-trips unresolved conflicts and their optional group metadata', async () => {

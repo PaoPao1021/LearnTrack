@@ -12,6 +12,21 @@ export interface SyncState {
   pendingCount: number;
 }
 
+export interface SyncPreviewItem {
+  direction: 'upload' | 'download';
+  entity: string;
+  entityId: string;
+  action: 'create' | 'update' | 'delete';
+  timestamp: string;
+  payload: unknown | null;
+}
+
+export interface SyncPreview {
+  uploadCount: number;
+  downloadCount: number;
+  latest: SyncPreviewItem | null;
+}
+
 interface SyncContext { serverUrl: string; epoch: string }
 async function readContext(): Promise<SyncContext> {
   return db.transaction('r', db.settings, async () => ({
@@ -59,6 +74,49 @@ async function apiFetch(path: string, init?: RequestInit, context?: SyncContext)
   return response;
 }
 
+function previewItem(op: {
+  entity: string;
+  entityId: string;
+  baseVersion: number | null;
+  payload?: unknown | null;
+  clientTimestamp: string;
+  serverTimestamp?: string;
+}, direction: SyncPreviewItem['direction']): SyncPreviewItem {
+  const payload = op.payload ?? null;
+  const deleted = payload == null || (typeof payload === 'object' && !Array.isArray(payload) &&
+    (payload as { deletedAt?: string | null }).deletedAt != null);
+  return {
+    direction,
+    entity: op.entity,
+    entityId: op.entityId,
+    action: deleted ? 'delete' : op.baseVersion == null ? 'create' : 'update',
+    timestamp: op.serverTimestamp ?? op.clientTimestamp,
+    payload,
+  };
+}
+
+/** Read queued changes without applying them so the user can confirm first. */
+export async function previewSync(): Promise<SyncPreview> {
+  const context = await readContext();
+  const cursor = await getSetting<number>(SETTINGS_KEYS.lastSyncCursor, 0);
+  const [uploadCount, newestUpload, response] = await Promise.all([
+    db.pendingOps.count(),
+    db.pendingOps.orderBy('seq').last(),
+    apiFetch(`/sync/pull?cursor=${cursor}`, undefined, context),
+  ]);
+  if (!response.ok) throw new AppError('sync.errPull', { status: response.status });
+  const parsed = SyncPullResponse.safeParse(await response.json());
+  if (!parsed.success || parsed.data.cursor < cursor || (parsed.data.ops.length > 0 && parsed.data.cursor === cursor)) {
+    throw new AppError('sync.errInvalidPull');
+  }
+  const candidates: SyncPreviewItem[] = [];
+  if (newestUpload) candidates.push(previewItem(newestUpload, 'upload'));
+  const newestDownload = parsed.data.ops.at(-1);
+  if (newestDownload) candidates.push(previewItem(newestDownload, 'download'));
+  candidates.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return { uploadCount, downloadCount: parsed.data.ops.length, latest: candidates[0] ?? null };
+}
+
 export async function login(username: string, password: string): Promise<void> {
   const context = await readContext();
   const res = await apiFetch('/auth/login', {
@@ -99,9 +157,10 @@ export async function healthCheck(): Promise<{ ok: boolean; version?: string }> 
 
 async function pushOnce(): Promise<{ applied: string[]; conflicts: unknown[] }> {
   const context = await readContext();
-  const deviceId = await getSetting<string>(SETTINGS_KEYS.deviceId, 'unknown');
   const ops = selectPushBatch(await db.pendingOps.orderBy('seq').toArray());
   if (ops.length === 0) return { applied: [], conflicts: [] };
+  // Restored outboxes keep the device identity that created their operation IDs.
+  const deviceId = ops[0]!.deviceId;
   const lastCursor = await getSetting<number>(SETTINGS_KEYS.lastSyncCursor, 0);
   const res = await apiFetch('/sync/push', {
     method: 'POST',
@@ -154,10 +213,13 @@ async function pushOnce(): Promise<{ applied: string[]; conflicts: unknown[] }> 
 /** Never split an atomic operation group at the HTTP batch boundary. */
 export function selectPushBatch(rows: PendingOp[], limit = 1000): PendingOp[] {
   const batch: PendingOp[] = [];
+  const deviceId = rows[0]?.deviceId;
   for (let i = 0; i < rows.length;) {
     const first = rows[i]!;
+    if (first.deviceId !== deviceId) break;
     let end = i + 1;
     if (first.opGroupId) while (end < rows.length && rows[end]!.opGroupId === first.opGroupId) end++;
+    if (rows.slice(i, end).some((row) => row.deviceId !== deviceId)) throw new AppError('sync.errInvalidPush');
     if (end - i > limit) {
       if (batch.length) break;
       throw new AppError('sync.errGroupTooLarge');

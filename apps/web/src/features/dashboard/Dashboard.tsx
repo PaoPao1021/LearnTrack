@@ -1,15 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Link } from 'react-router-dom';
 import { db } from '../../db/database';
 import { useTimer, elapsedSeconds } from '../../stores/timer';
 import { formatClock, todayKey, minuteOfDay, TZ } from '../../utils';
 import { useI18n } from '../../i18n';
 import EntryModal from '../../components/common/EntryModal';
-import { labelOf, useActivities } from '../../components/common/useActivities';
+import { labelOf, pathLabelOf, useActivities } from '../../components/common/useActivities';
 import { ActivityCombobox } from '../../components/common/ActivityCombobox';
-import { toggleTodo, addQuickAction, removeQuickAction } from '../../services/commands';
-import { computeStats, chapterProgress, quantityProgress, goalCompletion, mondayOf, entrySecondsByLocalDay } from '@learntrack/domain';
+import { toggleTodo, addQuickAction, removeQuickAction, addTodo } from '../../services/commands';
+import { computeStats, chapterProgress, quantityProgress, goalCompletion, mondayOf, entrySecondsByLocalDay, isSelfOrDescendant } from '@learntrack/domain';
 import type { Category, EntryRecord } from '@learntrack/domain';
 import {
   Play, Pause, Square, Plus, Timer as TimerIcon, ListTodo, Route,
@@ -71,7 +70,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
   };
 
   const handleFinish = async () => {
-    const actName = target ? `${labelOf(target)} · ${target.activity.name}` : (timer.label || '专注');
+    const actName = target ? pathLabelOf(target) : (timer.label || '专注');
     const actColor = target?.subject.color ?? 'var(--accent)';
     const dur = elapsed;
     soundscape.playSuccess();
@@ -99,7 +98,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
               <select className="input h-full" value={pickActivity} onChange={(e) => setPickActivity(e.target.value)} aria-label={t('timer.activityLabel')}>
                 <option value="">{t('timer.pickPlaceholder')}</option>
                 {activities.map((a) => (
-                  <option key={a.activity.id} value={a.activity.id}>{labelOf(a)} · {a.activity.name}</option>
+                  <option key={a.activity.id} value={a.activity.id}>{pathLabelOf(a)}</option>
                 ))}
               </select>
             </div>
@@ -162,7 +161,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
           timer={timer}
           elapsed={elapsed}
           overtime={overtime}
-          activityLabel={target ? `${labelOf(target)} · ${target.activity.name}` : timer.label}
+          activityLabel={target ? pathLabelOf(target) : timer.label}
           activityColor={target?.subject.color}
         />
       </>
@@ -198,7 +197,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
             {target && (
               <div className="mb-2.5 inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-white/60 px-3 py-1 text-xs font-medium backdrop-blur-sm dark:bg-white/[0.06]">
                 <span className="h-2 w-2 rounded-full shadow-xs" style={{ background: target.subject.color }} />
-                <span>{labelOf(target)} · {target.activity.name}</span>
+                <span>{pathLabelOf(target)}</span>
               </div>
             )}
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -253,7 +252,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
 
         {(target || timer.label) && (
           <div className="mt-4 border-t pt-3 text-xs opacity-60 hairline">
-            {target ? `${labelOf(target)} · ${target.activity.name}` : timer.label}
+            {target ? pathLabelOf(target) : timer.label}
           </div>
         )}
       </section>
@@ -341,6 +340,8 @@ function TodayTodos({ targetDate }: { targetDate?: string }) {
   const { t } = useI18n();
   const todos = useLiveQuery(() => db.todos.filter((td) => !td.deletedAt).toArray(), [], []);
   const today = targetDate ?? todayKey();
+  const [newTodo, setNewTodo] = useState('');
+  const [adding, setAdding] = useState(false);
   const overdue = (todos ?? []).filter((td) => !td.done && td.dueDate && td.dueDate < today);
   const overdueIds = new Set(overdue.map((td) => td.id));
   const todays = (todos ?? []).filter((td) => !td.done && td.scheduledDate && td.scheduledDate <= today && !overdueIds.has(td.id));
@@ -355,15 +356,38 @@ function TodayTodos({ targetDate }: { targetDate?: string }) {
         </div>
         <ListTodo size={20} strokeWidth={1.6} className="opacity-30" />
       </div>
+      <form className="mb-4 flex gap-2" onSubmit={async (event) => {
+        event.preventDefault();
+        const title = newTodo.trim();
+        if (!title || adding) return;
+        setAdding(true);
+        try {
+          await addTodo({ title, subjectId: null, scheduledDate: today, dueDate: null });
+          setNewTodo('');
+          soundscape.playPop();
+          showToast(t('todos.added', { title }), 'success');
+        } finally {
+          setAdding(false);
+        }
+      }}>
+        <label className="sr-only" htmlFor="dashboard-todo-title">{t('todo.contentLabel')}</label>
+        <input
+          id="dashboard-todo-title"
+          className="input min-w-0 flex-1"
+          maxLength={120}
+          placeholder={t('todos.quickAddPlaceholder')}
+          value={newTodo}
+          onChange={(event) => setNewTodo(event.target.value)}
+        />
+        <button className="btn-primary shrink-0" type="submit" disabled={adding || !newTodo.trim()}>
+          <Plus size={15} /> {adding ? t('common.loading') : t('todo.add')}
+        </button>
+      </form>
       {todays.length === 0 && doneToday.length === 0 && (
         <EmptyState
           icon={<ListTodo size={18} />}
           title={t('empty.noTodos')}
           description={t('todos.empty')}
-          action={{
-            label: t('nav.learning'),
-            to: '/learning',
-          }}
         />
       )}
       <ul className="space-y-2">
@@ -446,10 +470,7 @@ function GoalsProgress({ todaySeconds, weekSeconds }: { todaySeconds: number; we
     return (subjectId: string, period: 'daily' | 'weekly') => {
       const key = `${subjectId}:${period}`;
       if (cache.has(key)) return cache.get(key)!;
-      const matching = (entries ?? []).filter((entry) => {
-        const activity = byId.get(entry.activityId);
-        return activity?.parentId === subjectId;
-      });
+      const matching = (entries ?? []).filter((entry) => isSelfOrDescendant(byId, entry.activityId, subjectId));
       const val = computeStats(matching, [], period === 'daily' ? today : weekStart, today, { timeZone: TZ }).totalSeconds;
       cache.set(key, val);
       return val;

@@ -5,13 +5,15 @@ import { useTheme } from './useTheme';
 import { Segmented } from '../../components/common/Segmented';
 import { Modal } from '../../components/common/Modal';
 import { useI18n, translateError } from '../../i18n';
-import { addCategory, archiveCategory, renameCategory } from '../../services/commands';
+import { addCategory, archiveCategory, updateCategory } from '../../services/commands';
 import { exportFullBackup, restoreBackup, inspectBackup, exportCsv, downloadBlob, type RestoreSummary } from '../../services/backup';
-import { login, logout, readSyncState, setServerUrl, syncNow, healthCheck, getServerUrl, checkSession } from '../../services/sync';
+import { login, logout, readSyncState, setServerUrl, syncNow, previewSync, healthCheck, getServerUrl, checkSession, type SyncPreview } from '../../services/sync';
 import type { Category } from '@learntrack/domain';
 import { ConflictSection } from './ConflictSection';
 import { soundscape } from '../../services/soundscape';
-import { Sun, Moon, Clock, Sparkles } from 'lucide-react';
+import { Sun, Moon, Clock, Sparkles, ArrowDownToLine, ArrowUpFromLine, RefreshCw } from 'lucide-react';
+
+const CATEGORY_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#64748b'];
 
 function ThemeSection() {
   const { t } = useI18n();
@@ -230,8 +232,9 @@ function CategorySection() {
   const { t } = useI18n();
   const categories = useLiveQuery(() => db.categories.toArray(), [], [] as Category[]);
   const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState('#3b82f6');
   const [parentOf, setParentOf] = useState('');
-  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; color: string } | null>(null);
   const majors = (categories ?? []).filter((c) => c.level === 'major' && !c.deletedAt);
   const subjects = (categories ?? []).filter((c) => c.level === 'subject' && !c.deletedAt);
   const activities = (categories ?? []).filter((c) => c.level === 'activity' && !c.deletedAt);
@@ -241,11 +244,11 @@ function CategorySection() {
     e.preventDefault();
     if (!newName.trim()) return;
     if (parentOf === '') {
-      await addCategory('major', null, newName.trim(), '#64748b');
+      await addCategory('major', null, newName.trim(), newColor);
     } else if (parentOf.startsWith('major:')) {
-      await addCategory('subject', parentOf.slice(6), newName.trim(), '#64748b');
+      await addCategory('subject', parentOf.slice(6), newName.trim(), newColor);
     } else {
-      await addCategory('activity', parentOf.slice(8), newName.trim(), '#64748b');
+      await addCategory('activity', parentOf.slice(8), newName.trim(), newColor);
     }
     setNewName('');
   };
@@ -258,7 +261,7 @@ function CategorySection() {
         {c.archived && <span className="text-xs">{t('cat.archived')}</span>}
       </span>
       <span className="flex gap-2">
-        <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => setRenaming({ id: c.id, name: c.name })}>{t('cat.rename')}</button>
+        <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => setEditing({ id: c.id, name: c.name, color: c.color })}>{t('cat.edit')}</button>
         {!c.archived && (
           <button className="btn-ghost min-h-9 px-3 py-1 text-xs" onClick={() => void archiveCategory(c.id)}>{t('cat.archive')}</button>
         )}
@@ -270,21 +273,31 @@ function CategorySection() {
     <div className="card p-4">
       <h2 className="display mb-2 text-xl">{t('cat.cardTitle')}</h2>
       <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t('cat.hint')}</p>
-      <form className="mb-3 flex flex-wrap gap-2" onSubmit={add}>
+      <form className="mb-4 grid gap-2 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,1.2fr)_auto_auto]" onSubmit={add}>
         <label className="sr-only" htmlFor="category-name">{t('cat.nameLabel')}</label>
-        <input id="category-name" className="input max-w-48" placeholder={t('cat.namePlaceholder')} value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input id="category-name" className="input" placeholder={t('cat.namePlaceholder')} value={newName} onChange={(e) => setNewName(e.target.value)} />
         <label className="sr-only" htmlFor="category-parent">{t('cat.parentLabel')}</label>
-        <select id="category-parent" className="input max-w-52" value={parentOf} onChange={(e) => setParentOf(e.target.value)}>
+        <select id="category-parent" className="input" value={parentOf} onChange={(e) => setParentOf(e.target.value)}>
           <option value="">{t('cat.asMajor')}</option>
           <optgroup label={t('cat.underMajor')}>
-            {majors.map((m) => <option key={m.id} value={`major:${m.id}`}>{m.name}</option>)}
+            {majors.filter((m) => !m.archived).map((m) => <option key={m.id} value={`major:${m.id}`}>{m.name}</option>)}
           </optgroup>
           <optgroup label={t('cat.underSubject')}>
-            {subjects.map((s) => <option key={s.id} value={`subject:${s.id}`}>{majorsMap.get(s.parentId ?? '')?.name} / {s.name}</option>)}
+            {subjects.filter((s) => !s.archived && !majorsMap.get(s.parentId ?? '')?.archived).map((s) => <option key={s.id} value={`subject:${s.id}`}>{majorsMap.get(s.parentId ?? '')?.name} / {s.name}</option>)}
           </optgroup>
         </select>
+        <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-soft)] px-3 text-xs font-medium text-[var(--text-secondary)]" htmlFor="category-color">
+          <span className="h-4 w-4 rounded-full shadow-xs" style={{ background: newColor }} />
+          {t('cat.color')}
+          <input id="category-color" type="color" className="h-7 w-7 cursor-pointer rounded bg-transparent" value={newColor} onChange={(e) => setNewColor(e.target.value)} />
+        </label>
         <button className="btn-primary" type="submit">{t('common.add')}</button>
       </form>
+      <div className="mb-4 flex flex-wrap gap-2" aria-label={t('cat.colorPresets')}>
+        {CATEGORY_COLORS.map((color) => (
+          <button key={color} type="button" className={`h-6 w-6 rounded-full transition-transform hover:scale-110 ${newColor === color ? 'ring-2 ring-[var(--ink)] ring-offset-2 ring-offset-transparent' : ''}`} style={{ background: color }} aria-label={color} aria-pressed={newColor === color} onClick={() => setNewColor(color)} />
+        ))}
+      </div>
       <ul className="space-y-0.5">
         {majors.map((m) => (
           <li key={m.id}>
@@ -300,13 +313,14 @@ function CategorySection() {
           </li>
         ))}
       </ul>
-      {renaming && (
-        <RenameCategoryDialog
-          initial={renaming.name}
-          onClose={() => setRenaming(null)}
-          onSubmit={async (name) => {
-            await renameCategory(renaming.id, name);
-            setRenaming(null);
+      {editing && (
+        <EditCategoryDialog
+          initialName={editing.name}
+          initialColor={editing.color}
+          onClose={() => setEditing(null)}
+          onSubmit={async (name, color) => {
+            await updateCategory(editing.id, { name, color });
+            setEditing(null);
           }}
         />
       )}
@@ -314,28 +328,30 @@ function CategorySection() {
   );
 }
 
-function RenameCategoryDialog({ initial, onClose, onSubmit }: {
-  initial: string;
+function EditCategoryDialog({ initialName, initialColor, onClose, onSubmit }: {
+  initialName: string;
+  initialColor: string;
   onClose: () => void;
-  onSubmit: (name: string) => Promise<void>;
+  onSubmit: (name: string, color: string) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const [name, setName] = useState(initial);
+  const [name, setName] = useState(initialName);
+  const [color, setColor] = useState(initialColor);
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      await onSubmit(name.trim());
+      await onSubmit(name.trim(), color);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal labelledBy="rename-category-title" onClose={onClose} panelClassName="modal-panel glass-emphasis w-full max-w-sm rounded-2xl p-5">
-      <h2 id="rename-category-title" className="mb-3 text-lg font-semibold">{t('cat.rename')}</h2>
+    <Modal labelledBy="edit-category-title" onClose={onClose} panelClassName="modal-panel glass-emphasis w-full max-w-sm rounded-2xl p-5">
+      <h2 id="edit-category-title" className="mb-3 text-lg font-semibold">{t('cat.editTitle')}</h2>
       <label className="label" htmlFor="rename-category-input">{t('cat.renamePrompt')}</label>
       <input
         id="rename-category-input"
@@ -352,6 +368,15 @@ function RenameCategoryDialog({ initial, onClose, onSubmit }: {
           }
         }}
       />
+      <fieldset className="mb-4">
+        <legend className="label">{t('cat.color')}</legend>
+        <div className="flex flex-wrap items-center gap-3">
+          {CATEGORY_COLORS.map((preset) => (
+            <button key={preset} type="button" className={`h-7 w-7 rounded-full transition-transform hover:scale-110 ${color === preset ? 'ring-2 ring-[var(--ink)] ring-offset-2 ring-offset-transparent' : ''}`} style={{ background: preset }} aria-label={preset} aria-pressed={color === preset} onClick={() => setColor(preset)} />
+          ))}
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-10 cursor-pointer rounded bg-transparent" aria-label={t('cat.customColor')} />
+        </div>
+      </fieldset>
       <div className="flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose} disabled={busy}>{t('common.cancel')}</button>
         <button className="btn-primary" disabled={busy || !name.trim()} onClick={() => void submit()}>{t('common.save')}</button>
@@ -367,12 +392,51 @@ function SyncSection() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
+  const [preview, setPreview] = useState<SyncPreview | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
     setState(await readSyncState());
     setServer(await getServerUrl());
   };
   useEffect(() => { void refresh(); }, []);
+
+  const inspect = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const next = await previewSync();
+      setPreview(next);
+      if (next.uploadCount === 0 && next.downloadCount === 0) setMessage(t('sync.noChanges'));
+    } catch (err) {
+      setPreview(null);
+      setMessage(t('sync.failed', { error: translateError(err, t) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmSync = async () => {
+    if (busy || !preview) return;
+    setBusy(true);
+    const s = await syncNow();
+    setState(s);
+    setPreview(null);
+    setMessage(s.lastError ? t('sync.failed', { error: translateError(s.lastError, t) }) : t('sync.done'));
+    setBusy(false);
+  };
+
+  const describePreview = (item: NonNullable<SyncPreview['latest']>) => {
+    const payload = item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+      ? item.payload as Record<string, unknown>
+      : null;
+    const detail = typeof payload?.name === 'string' ? payload.name
+      : typeof payload?.title === 'string' ? payload.title
+      : typeof payload?.durationSeconds === 'number' ? t('sync.minutes', { count: Math.round(payload.durationSeconds / 60) })
+      : item.entityId.slice(0, 8);
+    return `${t(`sync.entity.${item.entity}` as 'sync.entity.category')} · ${detail}`;
+  };
 
   return (
     <div className="card p-4">
@@ -389,9 +453,9 @@ function SyncSection() {
         <p className="mt-2 text-xs opacity-60">{t('sync.serverHint')}</p>
       </div>
       {state?.loggedIn ? (
-        <div className="mb-3 flex gap-2">
-          <button className="btn-ghost" onClick={async () => { const s = await syncNow(); setState(s); setMessage(s.lastError ? t('sync.failed', { error: translateError(s.lastError, t) }) : t('sync.done')); }}>{t('sync.now')}</button>
-          <button className="btn-danger" onClick={async () => { await logout(); void refresh(); }}>{t('sync.logout')}</button>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button className="btn-primary" disabled={busy} onClick={() => void inspect()}><RefreshCw size={15} className={busy ? 'animate-spin' : ''} /> {t('sync.inspect')}</button>
+          <button className="btn-danger" disabled={busy} onClick={async () => { await logout(); setPreview(null); void refresh(); }}>{t('sync.logout')}</button>
         </div>
       ) : (
         <form className="mb-3 flex flex-wrap gap-2" onSubmit={async (e) => {
@@ -405,11 +469,35 @@ function SyncSection() {
           void refresh();
         }}>
           <label className="sr-only" htmlFor="sync-username">{t('sync.username')}</label>
-          <input id="sync-username" className="input max-w-40" placeholder={t('sync.username')} value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input id="sync-username" className="input max-w-40" autoComplete="username" placeholder={t('sync.username')} value={username} onChange={(e) => setUsername(e.target.value)} />
           <label className="sr-only" htmlFor="sync-password">{t('sync.password')}</label>
-          <input id="sync-password" className="input max-w-40" type="password" placeholder={t('sync.password')} value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input id="sync-password" className="input max-w-40" type="password" autoComplete="current-password" placeholder={t('sync.password')} value={password} onChange={(e) => setPassword(e.target.value)} />
           <button className="btn-primary" type="submit">{t('sync.login')}</button>
         </form>
+      )}
+      {preview && (preview.uploadCount > 0 || preview.downloadCount > 0) && (
+        <div className="mb-3 rounded-2xl border border-[var(--border-soft)] bg-black/[0.025] p-4 dark:bg-white/[0.035]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-[var(--ink)]">{t('sync.reviewTitle')}</p>
+              <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{t('sync.reviewCounts', { upload: preview.uploadCount, download: preview.downloadCount })}</p>
+            </div>
+            <button className="btn-primary" disabled={busy} onClick={() => void confirmSync()}>{t('sync.confirm')}</button>
+          </div>
+          {preview.latest && (
+            <div className="flex items-start gap-3 rounded-xl border border-[var(--border-soft)] bg-white/60 p-3 dark:bg-white/[0.04]">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]">
+                {preview.latest.direction === 'upload' ? <ArrowUpFromLine size={16} /> : <ArrowDownToLine size={16} />}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[var(--accent)]">{t(`sync.${preview.latest.direction}` as 'sync.upload')} · {t(`sync.action.${preview.latest.action}` as 'sync.action.create')}</p>
+                <p className="truncate text-sm font-medium text-[var(--ink)]">{describePreview(preview.latest)}</p>
+                <p className="mt-0.5 text-xs text-[var(--text-tertiary)]">{new Date(preview.latest.timestamp).toLocaleString(locale)}</p>
+              </div>
+            </div>
+          )}
+          <button className="mt-3 text-xs font-medium text-[var(--text-secondary)] underline underline-offset-4" disabled={busy} onClick={() => setPreview(null)}>{t('common.cancel')}</button>
+        </div>
       )}
       <ul className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
         <li>{t('sync.pending', { count: state?.pendingCount ?? 0 })}</li>
@@ -418,7 +506,7 @@ function SyncSection() {
         {state?.lastError && <li className="text-red-500">{t('sync.lastError', { error: translateError(state.lastError, t) })}</li>}
       </ul>
       {message && <p role="status" className="mt-2 text-sm">{message}</p>}
-      <p className="mt-2 text-xs text-slate-400">{t('sync.offlineHint')}</p>
+      <p className="mt-2 text-xs text-slate-400">{t('sync.confirmHint')}</p>
     </div>
   );
 }

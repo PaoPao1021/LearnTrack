@@ -278,17 +278,49 @@ describe('LearnTrack API', () => {
        VALUES (?, ?, 'settings', ?, NULL, ?, ?, ?, ?)`,
     );
     const now = new Date().toISOString();
-    for (let index = 0; index < 1999; index += 1) {
-      insert.run(crypto.randomUUID(), 'seed', `page-${start}-${index}`, JSON.stringify({ key: `page-${start}-${index}`, value: index }), null, now, now);
-    }
     const groupId = crypto.randomUUID();
-    for (let index = 0; index < 2; index += 1) {
-      insert.run(crypto.randomUUID(), 'seed', `group-${start}-${index}`, JSON.stringify({ key: `group-${start}-${index}`, value: index }), groupId, now, now);
+    database.exec('BEGIN');
+    try {
+      for (let index = 0; index < 1999; index += 1) {
+        insert.run(crypto.randomUUID(), 'seed', `page-${start}-${index}`, JSON.stringify({ key: `page-${start}-${index}`, value: index }), null, now, now);
+      }
+      for (let index = 0; index < 2; index += 1) {
+        insert.run(crypto.randomUUID(), 'seed', `group-${start}-${index}`, JSON.stringify({ key: `group-${start}-${index}`, value: index }), groupId, now, now);
+      }
+      database.exec('COMMIT');
+    } catch (error) {
+      database.exec('ROLLBACK');
+      throw error;
     }
     const pulled = await app.inject({ method: 'GET', url: `/api/v1/sync/pull?cursor=${start}`, headers: { cookie } });
     expect(pulled.statusCode).toBe(200);
     expect(pulled.json().ops).toHaveLength(2001);
     expect(pulled.json().ops.slice(-2).map((op: { opGroupId: string }) => op.opGroupId)).toEqual([groupId, groupId]);
+  });
+
+  it('accepts the first update to local seed data that was never created on the server', async () => {
+    const cookie = await loginCookie();
+    const entityId = crypto.randomUUID();
+    const opId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const response = await app.inject({
+      method: 'POST', url: '/api/v1/sync/push', headers: { cookie },
+      payload: {
+        deviceId: 'device-seed', lastCursor: 0,
+        ops: [{
+          opId, deviceId: 'device-seed', entity: 'category', entityId, baseVersion: 1,
+          payload: {
+            id: entityId, level: 'major', parentId: null, name: '数学', color: '#8b5cf6', archived: false,
+            sortOrder: 0, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, version: 2,
+          },
+          opGroupId: null, clientTimestamp: new Date().toISOString(),
+        }],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ appliedOpIds: [opId], conflicts: [] });
+    expect(database.prepare('SELECT version FROM entity_versions WHERE entity = ? AND entity_id = ?').get('category', entityId))
+      .toEqual(expect.objectContaining({ version: 2 }));
   });
 
   it('does not let forged forwarded IPs bypass login rate limiting by default', async () => {

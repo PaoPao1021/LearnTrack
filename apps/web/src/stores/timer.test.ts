@@ -40,6 +40,22 @@ describe('timer store', () => {
     expect(useTimer.getState().lastTickAt).toBeGreaterThan(baseline);
   });
 
+  it('does not overwrite an active timer or race a pending stop with a switch', async () => {
+    const first = crypto.randomUUID();
+    const second = crypto.randomUUID();
+    useTimer.getState().start(first, '第一项');
+    useTimer.getState().start(second, '第二项');
+    expect(useTimer.getState().activityId).toBe(first);
+    useTimer.setState({ startedAt: Date.now() - 60_000 });
+    const stopping = useTimer.getState().stop();
+    await useTimer.getState().switchActivity(second, '第二项');
+    await stopping;
+    expect(useTimer.getState().status).toBe('idle');
+    expect((await db.entries.toArray()).map((entry) => entry.activityId)).toEqual([first]);
+    await useTimer.getState().switchActivity(second, '第二项');
+    expect(useTimer.getState().activityId).toBe(second);
+  });
+
   it('synchronizes state when a storage event is received from another tab', () => {
     const activityId = crypto.randomUUID();
     syncFromStorage({

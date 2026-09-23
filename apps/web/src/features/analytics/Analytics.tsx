@@ -8,7 +8,8 @@ import { useI18n, type MessageKey } from '../../i18n';
 import { THEME_CHANGE_EVENT } from '../settings/useTheme';
 import {
   computeStats, formatDuration, previousRange, daysBetweenInclusive,
-  entrySecondsByLocalDay,
+  entrySecondsByLocalDay, isSelfOrDescendant, categoryPath,
+  majorOf as majorCategoryOf,
 } from '@learntrack/domain';
 import { todayKey, TZ } from '../../utils';
 import * as echarts from 'echarts/core';
@@ -113,16 +114,12 @@ function buildMajorSeries(
   }
 
   const byId = new Map(categories.map((c) => [c.id, c]));
-  const majorOf = (activityId: string): Category | undefined => {
-    const activity = byId.get(activityId);
-    const subject = activity?.parentId ? byId.get(activity.parentId) : undefined;
-    return subject?.parentId ? byId.get(subject.parentId) : undefined;
-  };
+  // 记录可能直接挂在科目或大科目上（该分类下没有活动时），所以逐级向上找大科目
 
   const maps = new Map<string, Map<string, number>>(); // majorId -> dayKey -> seconds
   for (const e of entries) {
     if (e.deletedAt) continue;
-    const major = majorOf(e.activityId);
+    const major = majorCategoryOf(byId, e.activityId);
     if (!major) continue;
     let perDay = maps.get(major.id);
     if (!perDay) { perDay = new Map(); maps.set(major.id, perDay); }
@@ -436,16 +433,10 @@ export default function Analytics() {
     chart.on('click', (p: unknown) => {
       const id = (p as { data?: { id?: string } }).data?.id;
       if (!id) return;
-      // 命中该分类自身及直接子分类的记录
-      const childIds = new Set((categories ?? []).filter((c) => c.parentId === id).map((c) => c.id));
+      // 命中该分类自身及其任意层级子分类的记录
       const hits = (entries ?? []).filter((e) => {
         if (entrySecondsInRange(e, range.from, range.to) <= 0) return false;
-        return e.activityId === id || childIds.has(e.activityId)
-          || (() => {
-            const activity = byId.get(e.activityId);
-            const subject = activity?.parentId ? byId.get(activity.parentId) : undefined;
-            return subject?.parentId === id;
-          })();
+        return isSelfOrDescendant(byId, e.activityId, id);
       });
       setDrill({ title: `${catName(id)} · ${range.from} → ${range.to}`, entries: hits });
     });
@@ -836,8 +827,8 @@ export default function Analytics() {
                 const max = Math.max(1, ...rows.map((r) => r.seconds));
                 return rows.map((r) => {
                   const a = byId.get(r.id);
-                  const s = a?.parentId ? byId.get(a.parentId) : undefined;
-                  const mj = s?.parentId ? byId.get(s.parentId) : undefined;
+                  // 祖先路径按 大科目 / 科目 顺序展示；记录直接挂在科目上时只有一段
+                  const breadcrumb = categoryPath(byId, r.id).slice(1).reverse().map((c) => c.name);
                   const openDrill = () => {
                     setDrill({ title: `${r.name} · ${range.from} → ${range.to}`, entries: (entries ?? []).filter((e) => e.activityId === r.id && entrySecondsInRange(e, range.from, range.to) > 0) });
                   };
@@ -852,7 +843,7 @@ export default function Analytics() {
                     >
                       <td className="py-2 pr-4">
                         <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: a?.color ?? '#888' }} />
-                        <span className="opacity-60">{mj?.name} / {s?.name} / </span>{r.name}
+                        <span className="opacity-60">{breadcrumb.length > 0 ? `${breadcrumb.join(' / ')} / ` : ''}</span>{r.name}
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">{r.count}</td>
                       <td className="py-2 pr-4 text-right font-semibold tabular-nums">{fmtDuration(r.seconds)}</td>

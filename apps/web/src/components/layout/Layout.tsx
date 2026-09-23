@@ -1,5 +1,4 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { startSyncLoop } from '../../services/sync';
 import { ensureSeeded, ensureDeviceId } from '../../db/seed';
 import { useThemeBootstrap, useTheme } from '../../features/settings/useTheme';
 import { useI18n } from '../../i18n';
@@ -44,14 +43,13 @@ export default function Layout() {
   const [time, setTime] = useState('');
   useEffect(() => {
     let disposed = false;
-    let stopSync = () => {};
     void initializeLocalData().then(() => {
-      if (!disposed) stopSync = startSyncLoop();
+      if (disposed) return;
     }).catch((error) => console.error('local data init failed', error));
     const clock = window.setInterval(() => {
       setTime(new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()));
     }, 1000);
-    return () => { disposed = true; stopSync(); window.clearInterval(clock); };
+    return () => { disposed = true; window.clearInterval(clock); };
   }, [locale]);
 
   const timer = useTimer();

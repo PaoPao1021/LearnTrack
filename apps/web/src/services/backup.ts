@@ -124,8 +124,8 @@ function validateReferences(data: Record<string, unknown[]>): void {
     if (!validParent) throw new Error('备份中的分类层级引用不合法，已拒绝导入。');
   }
   for (const entry of entries) {
-    if (categoriesById.get(entry.activityId)?.level !== 'activity') {
-      throw new Error('备份中的学习记录引用了不存在的活动，已拒绝导入。');
+    if (!categoriesById.has(entry.activityId)) {
+      throw new Error('备份中的学习记录引用了不存在的分类，已拒绝导入。');
     }
     const ranged = entry.method === 'range' || entry.method === 'timer';
     if (ranged !== (entry.startedAt != null && entry.endedAt != null) ||
@@ -165,8 +165,8 @@ function validateReferences(data: Record<string, unknown[]>): void {
     }
   }
   for (const action of quickActions) {
-    if (categoriesById.get(action.activityId)?.level !== 'activity') {
-      throw new Error('备份中的快捷项引用了不存在的活动，已拒绝导入。');
+    if (!categoriesById.has(action.activityId)) {
+      throw new Error('备份中的快捷项引用了不存在的分类，已拒绝导入。');
     }
   }
 }

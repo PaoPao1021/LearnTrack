@@ -228,10 +228,18 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
         let hasConflict = false;
         for (const op of pending) {
           const key = `${op.entity}\u0000${op.entityId}`;
-          const serverVersion = stagedVersions.get(key)
-            ?? ((getVersion.get(op.entity, op.entityId) as { version: number } | undefined)?.version ?? 0);
-          if (op.baseVersion !== (serverVersion === 0 ? null : serverVersion)) hasConflict = true;
-          stagedVersions.set(key, serverVersion + 1);
+          const persistedVersion = (getVersion.get(op.entity, op.entityId) as { version: number } | undefined)?.version ?? 0;
+          const serverVersion = stagedVersions.get(key) ?? persistedVersion;
+          const payloadVersion = op.payload && typeof op.payload === 'object' && op.entity !== 'settings'
+            ? Number((op.payload as { version?: unknown }).version)
+            : 0;
+          // Built-in seed data exists before a server is configured, so its
+          // first edit legitimately has a non-null base version even though
+          // this entity has never appeared in the server log.
+          const bootstrap = !stagedVersions.has(key) && persistedVersion === 0 && op.baseVersion != null &&
+            Number.isInteger(payloadVersion) && payloadVersion === op.baseVersion + 1;
+          if (op.baseVersion !== (serverVersion === 0 ? null : serverVersion) && !bootstrap) hasConflict = true;
+          stagedVersions.set(key, bootstrap ? payloadVersion : serverVersion + 1);
         }
         if (hasConflict) {
           db.exec(`ROLLBACK TO ${savepoint}`);
@@ -241,7 +249,13 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
         }
         for (const op of pending) {
           const ver = getVersion.get(op.entity, op.entityId) as { version: number } | undefined;
-          const nextVersion = (ver?.version ?? 0) + 1;
+          const serverVersion = ver?.version ?? 0;
+          const payloadVersion = op.payload && typeof op.payload === 'object' && op.entity !== 'settings'
+            ? Number((op.payload as { version?: unknown }).version)
+            : 0;
+          const bootstrap = serverVersion === 0 && op.baseVersion != null &&
+            Number.isInteger(payloadVersion) && payloadVersion === op.baseVersion + 1;
+          const nextVersion = bootstrap ? payloadVersion : serverVersion + 1;
           const deleted = op.payload == null || ((op.payload as { deletedAt?: string | null })?.deletedAt != null);
           const authoritativePayload = op.payload != null && op.entity !== 'settings'
             ? { ...(op.payload as Record<string, unknown>), version: nextVersion }

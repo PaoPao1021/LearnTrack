@@ -7,7 +7,7 @@ import { EmptyState } from '../../components/common/EmptyState';
 import EntryModal from '../../components/common/EntryModal';
 import { Modal } from '../../components/common/Modal';
 import { updateEntry } from '../../services/commands';
-import { localDateKey } from '@learntrack/domain';
+import { localDateKey, categoryPath, isSelfOrDescendant } from '@learntrack/domain';
 import { todayKey, TZ } from '../../utils';
 import { useI18n, translateError } from '../../i18n';
 import type { Category, EntryRecord } from '@learntrack/domain';
@@ -19,8 +19,8 @@ function fmtTime(ms: number): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ms));
 }
 
-function EntryRow({ entry, activity, subject, major, onEdit }: {
-  entry: EntryRecord; activity?: Category; subject?: Category; major?: Category; onEdit: () => void;
+function EntryRow({ entry, activity, categoryLabel, onEdit }: {
+  entry: EntryRecord; activity?: Category; categoryLabel: string; onEdit: () => void;
 }) {
   const { t, fmtDuration } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -36,7 +36,7 @@ function EntryRow({ entry, activity, subject, major, onEdit }: {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-sm text-[var(--ink)]">
-            {major ? `${major.name} / ` : ''}{subject?.name ?? ''} / {activity?.name ?? '—'}
+            {categoryLabel}
           </span>
           <span className="rounded-md border border-[var(--border-soft)]/60 bg-black/[0.03] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] dark:bg-white/[0.05]">
             {t(`method.${entry.method}` as 'method.duration' | 'method.range' | 'method.timer')}
@@ -120,18 +120,11 @@ export default function Entries() {
       .filter((e) => !e.deletedAt)
       .filter((e) => {
         if (!filterActivity) return true;
-        const activity = byId.get(e.activityId);
-        if (!activity) return false;
-        if (activity.id === filterActivity) return true;
-        const subject = activity.parentId ? byId.get(activity.parentId) : undefined;
-        if (subject?.id === filterActivity) return true;
-        const major = subject?.parentId ? byId.get(subject.parentId) : undefined;
-        return major?.id === filterActivity;
+        return isSelfOrDescendant(byId, e.activityId, filterActivity);
       })
       .filter((e) => {
         if (!q) return true;
-        const activity = byId.get(e.activityId);
-        const names = [activity?.name, e.note ?? ''].join(' ').toLowerCase();
+        const names = [...categoryPath(byId, e.activityId).map((c) => c.name), e.note ?? ''].join(' ').toLowerCase();
         return names.includes(q);
       })
       .sort((a, b) => (a.learningDate === b.learningDate
@@ -281,15 +274,13 @@ export default function Entries() {
               <ul className="mt-3 space-y-2">
                 {list.map((e) => {
                   const activity = byId.get(e.activityId);
-                  const subject = activity?.parentId ? byId.get(activity.parentId) : undefined;
-                  const major = subject?.parentId ? byId.get(subject.parentId) : undefined;
+                  const categoryLabel = categoryPath(byId, e.activityId).reverse().map((c) => c.name).join(' / ') || '—';
                   return (
                     <EntryRow
                       key={e.id}
                       entry={e}
                       activity={activity}
-                      subject={subject}
-                      major={major}
+                      categoryLabel={categoryLabel}
                       onEdit={() => setEditing(e)}
                     />
                   );

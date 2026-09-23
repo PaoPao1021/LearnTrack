@@ -1,5 +1,6 @@
 import type { Category, EntryRecord, LearningPath, PathItem } from './model.js';
 import { splitRangeByLocalDay, daysBetweenInclusive, mondayOf, addDays, localDateKey } from './time.js';
+import { categoryPath } from './tree.js';
 
 export interface CategoryTotals {
   categoryId: string;
@@ -279,10 +280,8 @@ function buildCategoryTotals(
   }
   const totals = new Map<string, number>();
   for (const [activityId, s] of secondsByActivity) {
-    let cur: Category | undefined = byId.get(activityId);
-    while (cur) {
+    for (const cur of categoryPath(byId, activityId)) {
       totals.set(cur.id, (totals.get(cur.id) ?? 0) + s);
-      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
     }
   }
   const build = (level: 0 | 1 | 2, parentId: string | null): CategoryTotals[] => {
