@@ -9,6 +9,7 @@ const tables = {
   category: db.categories, entry: db.entries, path: db.paths, pathItem: db.pathItems,
   progressEvent: db.progressEvents, todo: db.todos, goal: db.goals,
   quickAction: db.quickActions, settings: db.settings,
+  studyPlan: db.studyPlans, practiceAttempt: db.practiceAttempts, courseProgress: db.courseProgress,
 };
 const key = (row: ConflictCandidate) => `${row.entity}:${row.entityId}`;
 

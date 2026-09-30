@@ -1,270 +1,70 @@
-<div align="center">
+# LearnTrack
 
-<p align="center">
-  <img src="docs/screenshots/dashboard-light.png" alt="LearnTrack 仪表盘真机实测" width="78%" />
-</p>
+用于考研数学和编程学习的个人工作台：安排每天的任务，记录学习时间和练习结果，再根据数据调整计划。
 
-# ⏱️ LearnTrack
+数据先保存在当前浏览器。计时、计划、练习、统计和完整备份可以离线使用；多设备同步、学习助手与平台活动日历需要自托管 API。
 
-**本地优先 · 液态玻璃美学 · 高精度学习时间账本**
+## 可以做什么
 
-*每一次专注都清晰可感，每一份投入皆有迹可循。*
+- **今日**：第一块直接添加待办，开始正计时或倒计时，结束后保存学习记录。
+- **计划**：设置日期范围、每日时长和题量，生成每日任务；支持编辑、暂停、结束和移除。修改安排保留已完成任务。
+- **练习**：按资料、知识点和原书题号记录正确、错误或未作答结果。支持单题计时、补录、重做、搜索和 JSON 导入导出。
+- **复习**：按最近一次结果列出错题与未作答题，重做答对后移出清单；默认三天后复习。
+- **统计**：查看作答正确率、首次正确率、题目数、总用时和平均用时。练习用时与学习时间账本分开，避免重复累加。
+- **学习助手**：近七天汇总用于复盘和起草安排；发送前展示数据，建议预览后确认加入待办。AI 接口在服务端配置，可扩展任务类型。
+- **编程活动**：读取 GitHub、力扣中国和 LeetCode 国际站的活动日历，保留最近一次读取供离线查看。
+- **数据管理**：自定义科目颜色、同步预览与确认、冲突处理、完整 JSON 备份和 CSV 导出。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178c6.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18.3-61dafb.svg?style=flat-square&logo=react&logoColor=black)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-8.3-646cff.svg?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Dexie](https://img.shields.io/badge/Dexie.js-IndexedDB-orange.svg?style=flat-square)](https://dexie.org/)
-[![ECharts](https://img.shields.io/badge/ECharts-6.1-aa344d.svg?style=flat-square&logo=apacheecharts&logoColor=white)](https://echarts.apache.org/)
-[![Tests](https://img.shields.io/badge/Tests-29%20passed-brightgreen.svg?style=flat-square)](packages/domain/src/index.test.ts)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](#-贡献指南-contributing)
+2027 数一的张宇资料目前提供 **30 个可编辑讲次编号及 1000 题题号档案**。尚未核实该版完整目录，不把通用知识点分类标为原书目录；教材正文、原题及答案不随应用分发。课程模板和统计口径见 [功能与配置说明](docs/study-workspace.md)。
 
-[功能特性](#-核心功能特性) • [UI 视觉与交互美学](#-ui-视觉与交互美学) • [真机运行预览](#-真机运行预览) • [快速开始](#-快速开始) • [架构设计](#-架构设计) • [技术栈](#-技术栈) • [开源协议](#-开源协议)
+## 本地运行
 
-</div>
+需要 Node.js 24 或更新版本（API 使用内置 SQLite）和 npm。
 
----
-
-## 🌟 项目简介
-
-**LearnTrack** 是一款专为终身学习者、考研考证党与深度思考者打造的 **本地优先（Local-First）学习时间记账与自我量化工具**。
-
-不同于依赖持续联网的打卡软件，LearnTrack 遵循 **“本地优先、极速响应、同步可控”** 原则。学习与专注数据默认存储在浏览器本地数据库（IndexedDB）中；只有在用户主动配置私有同步服务后，数据才会进入同步流程。界面采用**液态拟物玻璃（Liquid Glass）视觉体系**与**原生微机械动效**，为进入学习状态提供清晰而克制的仪式感。
-
----
-
-## 🎨 UI 视觉与交互美学
-
-LearnTrack 在 UI 细节与动效质感上进行了深度打磨，融合了拟物物理质感与现代数字界面的通透灵动：
-
-### 1. 纯色卡片鼠标动态聚光（Spotlight Cursor Follow）
-全局信息卡片带有随光标移动的柔和聚光效果（Radius 420px），并通过 `requestAnimationFrame` 节流更新位置，在高刷新率屏幕上也能保持流畅。
-
-### 2. 精密机械联动时计（Mechanical Chronograph Logo）
-界面左上角标识内置自研 SVG 机械轮系：外层天体刻度星齿以 18 秒周期顺时针运转，中层测速轨道逆时针环绕，精密时针与秒针呈 6:1 机械差速匀速滑扫，鼠标悬停时自动激发加速齿轮啮合动效。
-
-### 3. 全屏沉浸专注模式（Zen Mode & Flow Field）
-一键全屏隐藏所有侧边栏与繁杂干扰，中央呈现呼吸律动时针大表盘。内置 **纯原生 Web Audio 声学心流场**，无需下载任何外部音频文件，零网络开销动态合成真实雨声、深海潮汐与阻断脑电波杂讯的 1/f² 深度棕色噪点（Brown Noise）。
-
-### 4. 几何无点圆润数字排印（Tick-Text Typography）
-告别传统生硬的打孔数字，全局数字均采用圆润饱满的几何几何字体，并强制开启 OpenType `tnum`（等宽对齐）与 `zero: 0` 特性，确保倒计时跳动、秒数递增时数字骨架绝对稳固、零晃动。
-
-### 5. 晶体高对比度微热力日历（Glass Calendar）
-剔除冗余遮挡滤镜，以纯粹的高透晶体面板呈现当月日期。每个日期格子底部配备活动微型多色指示点（Activity Micro-Dots），支持上一年/下一月快速穿梭与一键回溯历史复盘。
-
----
-
-## 📸 真机运行预览
-
-以下画面来自 **2026-09-14 的 Windows 桌面浏览器实测**，不是设计稿或空状态占位图。测试库通过应用界面实际录入：共 **16 条学习记录、连续 15 个活跃日、总计 20 小时 50 分钟**，覆盖数学、408、英语、算法与政治五个领域；同时创建 2 条学习路线、2 项今日待办，以及每日 4 小时 / 每周 25 小时目标。
-
-| 实测项 | 本次验证数据 |
-| :--- | :--- |
-| 月度统计 | 2026 年 9 月 15 条记录，14 个活跃日，共 18 小时 40 分钟 |
-| 连续记录 | 2026-08-31 至 2026-09-14，连续 15 天 |
-| 章节路线 | `408 计算机基础冲刺`：2/5 章，完成 40% |
-| 数量路线 | `LeetCode Hot 100`：37/100 题，完成 37% |
-| 运行视口 | Chromium 桌面浏览器，1440 × 900 / 1050 |
-
-### 1. 仪表盘全景（Dashboard）
-
-浅色与深色主题均在同一组实测数据下截取。可见今日 2 小时 55 分钟、2 次专注记录、待办、时长目标与路线进度联动。
-
-<p align="center">
-  <img src="docs/screenshots/dashboard-light.png" alt="Dashboard 浅色模式实测" width="46%" />
-  <img src="docs/screenshots/dashboard-dark.png" alt="Dashboard 深色模式实测" width="46%" />
-</p>
-
-### 2. 统计看板（Analytics）
-
-切换到“本月”口径后，趋势图、领域分布与具体科目排行均由 9 月份的 15 条记录计算生成，不再使用“加载中”占位画面。
-
-<p align="center">
-  <img src="docs/screenshots/analytics-preview.png" alt="Analytics 月度统计实测" width="82%" />
-</p>
-
-### 3. 晶体热力日历与复盘穿梭（Glass Calendar）
-
-日历中的彩色活动点来自连续 15 天的真实测试记录；选中 9 月 14 日可回看当日 **2 小时 55 分钟 / 2 次专注**，并可快捷跳转今天、昨天、前天或一周前。
-
-<p align="center">
-  <img src="docs/screenshots/calendar-modal.png" alt="Glass Calendar 连续学习热力数据实测" width="360" />
-</p>
-
-### 4. 体系化学习路线（Learning Paths）
-
-同时验证章节清单与数量目标两种路线模型：章节勾选、进度条、快捷打卡、今日待办和日/周时长目标均可正常写入并即时更新。
-
-<p align="center">
-  <img src="docs/screenshots/learning-preview.png" alt="Learning Paths 双路线实测" width="82%" />
-</p>
-
----
-
-## ✨ 核心功能特性
-
-### ⏱️ 专注计时与时间账本
-- **正计时 / 倒计时**：专注中途支持随时暂停，自动闭合暂停区间；支持超额记录。
-- **抗休眠与刷新恢复**：采用绝对壁钟时间戳（Wall-Clock Timestamps）恢复状态，电脑合盖休眠或误关页面，时长精准如初。
-- **跨午夜智能分摊**：支持通宵或深夜学习记录，跨午夜段按当地日期自动拆解统计。
-- **三级分类体系**：`大类领域 → 具体科目 → 细分活动`，支持多层级自定义专属颜色，历史记录永不因分类调整而丢失。
-
-### 📊 深度量化与统计洞察
-- **重构双层分布圆盘**：实心内圆代表核心大类，外围加粗粗环展示详细活动，外置独立高光投入数据条。
-- **GitHub 风格年度贡献热力图**：全年度学习密度按 5 档色阶直观分布，点击任意网格直接下钻查看该日原始记录。
-- **多维度交叉分析**：多科目日/周/月叠加渐变趋势图、单次时长区间分布（<30m、1h、2h+）及 24 小时精力分布波峰。
-
-### 🛡️ 本地优先与隐私安全
-- **离线可用**：至少成功访问一次并完成应用缓存后，核心记账、统计与音频合成都可在浏览器本地运行。
-- **可确认的幂等同步**：内置 Outbox 队列事务；同步前展示上传/下载数量与最近一条变化，经确认后再与私有服务（Node.js + SQLite）双向同步，版本冲突由用户自主裁决。
-- **四重备份校验**：一键导出 JSON 镜像，导入前验证结构、计数、SHA-256 校验和与关系完整性；同时支持导出 CSV 供 Excel/Python 进阶分析。
-
----
-
-## 🚀 快速开始
-
-### 前置要求
-- [Node.js](https://nodejs.org/) ≥ 20.0.0
-- npm ≥ 10.0.0
-
-### 本地开发
-
-```bash
-# 1. 克隆代码仓库
-git clone https://github.com/PaoPao1021/LearnTrack.git
-cd LearnTrack
-
-# 2. 安装 Monorepo 所有依赖
-npm install
-
-# 3. 构建工作区依赖（干净克隆首次运行必需）
+```sh
+npm ci
 npm run build
-
-# 4. 启动前端 Web 开发服务
 npm run dev:web
 ```
 
-启动完成后，在浏览器访问：**`http://localhost:5173`** 即可即刻体验。
+打开 `http://localhost:5173`。首次运行先构建，生成共享包的导出。
 
-### 可选：启动多端同步服务（API）
+需要在线功能时，在根目录复制 `.env.example` 为 `.env`，设置账号、密码、密码盐和会话密钥，再启动 API：
 
-```bash
-# 在仓库根目录创建配置，修改其中的密码、盐与会话密钥
-cp .env.example .env
-# 完成上面的 npm run build 后，显式加载配置启动 API
+```sh
 node --env-file=.env apps/api/dist/app/server.js
 ```
 
-> **说明**：无需启动 API 服务亦可完整使用全部时间记账、图表分析与数据导出功能。
+在设置页填写服务器地址 `/` 并登录。开发服务器通过 Vite 代理访问本地 API。
 
-在设置页将同步地址填为 `/` 并登录即可经 Vite 代理访问 API；留空关闭同步。
+## 部署与更新
 
-### 生产部署
+[部署指南](DEPLOYMENT.md) 包含 ECS Docker Compose + Caddy 的同源 HTTPS 配置和恢复脚本。已有部署按 [保留数据更新方案](docs/ecs-update.md) 操作：备份各浏览器和 SQLite，使用原 Compose 项目名、配置及数据卷更新。
 
-详见 [部署与恢复指南](DEPLOYMENT.md)：提供 Linux/ECS + Docker Compose + Caddy 的同源 HTTPS 配置、环境变量模板、SQLite 一致快照及恢复脚本。生产 API 不直接暴露端口，真实环境变量文件已加入 Git 忽略规则。
+AI 和 GitHub 配置是可选的；密钥只放在服务器环境文件中，不放进 `VITE_*` 变量或 Git。力扣中国和国际站使用各自的公开 GraphQL 接口；平台限制请求时会显示错误。
 
----
+## 验证
 
-## 🧪 自动化测试与质量保障
-
-本次在 Node.js `v24.18.0`、npm `11.16.0` 环境下完成生产构建与全工作区复测。由于 Web 测试会读取工作区包的 `dist` 导出，干净克隆后应先构建、再运行测试：
-
-```bash
-# 执行生产环境编译打包检查（TypeScript 严格检查 + Vite 优化分包）
+```sh
 npm run build
-
-# 运行全工作区单元测试（Vitest）
 npm test
 ```
 
-```text
-✓ Production build: 2517 modules transformed
-✓ packages/domain: 1 file, 14 tests passed
-✓ apps/api:         1 file, 10 tests passed
-✓ apps/web:         5 files, 34 tests passed
-────────────────────────────────────────────────────
-Total: 7 test files, 58 tests passed
-```
+测试覆盖时间统计、同步冲突、计划与待办的原子写入、旧数据库升级、备份兼容、练习统计和在线接口校验。外部接口测试使用模拟响应，不代表实际 AI 或 GitHub 账号已配置。
 
----
+`scripts/verify-study-ui.cjs` 是独立浏览器流程检查，需本地可用的 Playwright 运行库及 Chromium 浏览器。可通过 `LT_PLAYWRIGHT_MODULE`、`LT_BROWSER_PATH`、`LT_PREVIEW_ORIGIN` 指定运行环境；使用隔离的浏览器上下文，不读写个人浏览器数据。截图使用测试记录，AI 与日历成功流程使用模拟服务。
 
-## 🏛️ 架构设计
+## 代码结构
 
-```mermaid
-flowchart TB
-  subgraph Browser["浏览器端 · Web App"]
-    UI["React 18 + Tailwind CSS<br/>Liquid Glass · Zen Mode · ECharts"]
-    DB["Dexie.js · IndexedDB<br/>Categories · Entries · Paths · Todos · Goals"]
-    Outbox["Local Outbox<br/>待同步事务队列"]
+| 路径 | 用途 |
+| --- | --- |
+| `apps/web` | React 页面、IndexedDB、计时器、同步和备份 |
+| `apps/api` | Fastify、SQLite、会话认证、同步与在线扩展 |
+| `packages/domain` | 时间和练习统计、计划日期、分类模型 |
+| `packages/contracts` | API、同步操作和备份的数据校验 |
+| `infrastructure` | Compose、Caddy 和 Nginx 配置 |
+| `scripts/backup` | 服务器一致快照、恢复和脚本回归检查 |
 
-    UI -->|本地读写| DB
-    DB -->|同事务写入| Outbox
-  end
+应用外壳、计划和练习采用系统字体、实色表面和明确操作。界面约定记录在 [DESIGN.md](DESIGN.md)，后续功能沿用这些约定。
 
-  Sync["可选：自托管同步服务<br/>Fastify · SQLite · Session Auth · 冲突保留"]
-  Outbox <-->|在线时通过 Op-Log 双向幂等同步| Sync
-```
-
----
-
-## 🧱 技术栈
-
-| 层次 | 技术选型 | 用途与优势 |
-| :--- | :--- | :--- |
-| **基础框架** | [React 18](https://react.dev/) + [TypeScript 5.6](https://www.typescriptlang.org/) | 强类型组件化开发，减少接口与状态错误 |
-| **工程构建** | [Vite 8](https://vitejs.dev/) + [Rollup](https://rollupjs.org/) | 秒级热更新，生产环境智能代码分块 |
-| **本地存储** | [Dexie.js](https://dexie.org/) (IndexedDB) | 纯前端本地持久化，支持响应式 liveQuery 查询 |
-| **状态流转** | [Zustand 5](https://zustand-demo.pmnd.rs/) | 轻量、无样板代码，与 LocalStorage 实时同步时计状态 |
-| **数据可视化** | [Apache ECharts 6](https://echarts.apache.org/) | 按需注册 Tree-shaking，支持全套无障碍读屏等价物 |
-| **声音系统** | Web Audio API (Native Oscillator) | 100% 离线可用的心流场白噪音与微触感回馈音 |
-| **样式体系** | [Tailwind CSS 3](https://tailwindcss.com/) + 自定义设计令牌 | CSS 变量驱动，支持深/浅主题与强调色切换 |
-| **多语言** | 自研轻量类型安全 `i18n` | 支持简中、英文随心热切换，词条完整覆盖 |
-
----
-
-## 📁 目录结构
-
-```text
-LearnTrack/
-├── apps/
-│   ├── web/                     # 前端单页应用（PWA · 离线优先）
-│   │   ├── public/              # 静态资源与 PWA ServiceWorker
-│   │   └── src/
-│   │       ├── components/      # 通用液态玻璃组件（Modal, Combobox, Logo, Toast）
-│   │       ├── features/        # 核心业务模块（Dashboard, Analytics, Entries...）
-│   │       ├── services/        # 声音引擎 (Soundscape), 备份恢复, 指令队列
-│   │       ├── stores/          # Zustand 状态机（计时器核心）
-│   │       ├── db/              # Dexie 数据库架构与种子数据
-│   │       └── styles/          # 全局设计令牌、卡片聚光灯与关键帧动画
-│   └── api/                     # 极轻量私有同步服务（Fastify + SQLite）
-├── packages/
-│   ├── domain/                  # 核心纯函数领域层（时间算法、跨午夜分摊、统计模型）
-│   └── contracts/               # 跨端 Zod 契约模式（同步协议、备份校验规范）
-├── docs/                        # README 真机运行截图
-└── infrastructure/              # 容器化部署脚本
-```
-
----
-
-## 🤝 贡献指南 (Contributing)
-
-我们非常欢迎社区贡献！无论是新功能想法、UI 建议还是代码重构：
-
-1. **Fork** 本仓库；
-2. 新建你的功能分支 (`git checkout -b feature/amazing-feature`)；
-3. 确保生产构建与测试通过 (`npm run build && npm test`)；
-4. 提交你的更改 (`git commit -m 'feat: add some amazing feature'`)；
-5. 推送到分支 (`git push origin feature/amazing-feature`)；
-6. 提交 **Pull Request**！
-
----
-
-## 📄 开源协议 (License)
-
-本项目采用 [MIT License](LICENSE) 开源协议。你可以自由使用、修改与二次分发，但请保留原作者版权说明。
-
----
-
-<div align="center">
-  <sub>Built with ❤️ for lifelong learners. Keep learning, keep tracking.</sub>
-</div>
+代码采用 [MIT License](LICENSE)。

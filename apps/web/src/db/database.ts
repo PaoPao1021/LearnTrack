@@ -4,6 +4,7 @@ import type {
   Todo, Goal, QuickAction, AppSettings,
 } from '@learntrack/domain';
 import { stableSeedId } from '@learntrack/domain';
+import type { StudyPlan, PracticeAttempt, CourseProgress } from '@learntrack/domain';
 
 export interface PendingOp {
   opId: string;
@@ -47,6 +48,9 @@ export class LearnTrackDB extends Dexie {
   pendingOps!: Table<PendingOp, number>;
   conflicts!: Table<ConflictCandidate, number>;
   assets!: Table<{ hash: string; blob: Blob; updatedAt: string }, string>;
+  studyPlans!: Table<StudyPlan, string>;
+  practiceAttempts!: Table<PracticeAttempt, string>;
+  courseProgress!: Table<CourseProgress, string>;
 
   constructor() {
     super('learntrack');
@@ -122,6 +126,11 @@ export class LearnTrackDB extends Dexie {
       await tx.table<QuickAction>('quickActions').toCollection().modify((action) => {
         if (!Number.isInteger(action.version) || action.version < 1) action.version = 1;
       });
+    });
+    this.version(4).stores({ ...stores,
+      studyPlans: 'id, startDate, endDate, status, deletedAt',
+      practiceAttempts: 'id, source, chapterKey, questionKey, learningDate, deletedAt, [source+questionKey]',
+      courseProgress: 'id, source, chapterKey, deletedAt',
     });
   }
 }

@@ -65,6 +65,8 @@ docker compose -f infrastructure/docker/docker-compose.yml up --build
 
 ## 更新
 
+本轮计划、练习与在线扩展的更新步骤见 [ECS 保留数据更新方案](docs/ecs-update.md)，包括原 Compose 项目名与卷核对、每个浏览器的完整备份，以及 IndexedDB 升级后的回滚限制。客户端升级后不能直接回滚旧前端继续使用。
+
 更新前先生成一个数据库快照，随后拉取并重建。命名卷不会被 `up -d --build` 或普通 `down` 删除。
 
 ```bash

@@ -249,6 +249,7 @@ export async function applyRemoteOps(ops: { entity: string; entityId: string; pa
   await db.transaction('rw', [
     db.categories, db.entries, db.paths, db.pathItems, db.progressEvents,
     db.todos, db.goals, db.quickActions, db.settings, db.pendingOps, db.conflicts,
+    db.studyPlans, db.practiceAttempts, db.courseProgress,
   ], async () => {
     if (context) await assertContext(context);
     if (expectedCursor !== undefined && expectedCursor !== await getSetting(SETTINGS_KEYS.lastSyncCursor, 0)) throw new AppError('sync.errServerChanged');
@@ -278,6 +279,9 @@ export async function applyRemoteOps(ops: { entity: string; entityId: string; pa
           case 'goal': await db.goals.delete(op.entityId); break;
           case 'quickAction': await db.quickActions.delete(op.entityId); break;
           case 'settings': await db.settings.delete(op.entityId); break;
+          case 'studyPlan': await db.studyPlans.delete(op.entityId); break;
+          case 'practiceAttempt': await db.practiceAttempts.delete(op.entityId); break;
+          case 'courseProgress': await db.courseProgress.delete(op.entityId); break;
           default: break;
         }
         continue;
@@ -304,6 +308,9 @@ export async function applyRemoteOps(ops: { entity: string; entityId: string; pa
         case 'todo': await db.todos.put(p as never); break;
         case 'goal': await db.goals.put(p as never); break;
         case 'quickAction': await db.quickActions.put(p as never); break;
+        case 'studyPlan': await db.studyPlans.put(p as never); break;
+        case 'practiceAttempt': await db.practiceAttempts.put(p as never); break;
+        case 'courseProgress': await db.courseProgress.put(p as never); break;
         default: break;
       }
     }

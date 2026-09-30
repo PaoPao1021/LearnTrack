@@ -1,22 +1,24 @@
 # ECS Docker Compose 保留数据更新方案
 
-适用：仓库 `infrastructure/docker/docker-compose.yml` 的部署方式。尚未连接 ECS 核验实际路径、卷名或线上版本；以下在 ECS 的 Bash 中分阶段执行，任一步失败先处理，不继续发布。本次修改前端分类、同步、备份、待办、计时及共享统计逻辑，不改数据库 schema、数据库名称或迁移脚本。
+适用于现有 LearnTrack Compose 部署。尚未连接你的 ECS；项目路径、实际 Compose 参数、卷名和线上版本需要按下面的只读步骤核对。不要更换部署目录、项目名、域名或端口。
 
-## 1. 先备份每个使用过的浏览器
+本次浏览器 IndexedDB 从版本 3 升至 4，只新增计划、练习与讲次进度表；旧表、记录、设置和待同步队列保留。服务端仍使用原有 SQLite 表和操作日志。新增实体需要新版服务端与前端配套使用。
 
-在原访问地址的设置页导出**完整 JSON 备份**，保存到电脑；CSV 不能恢复完整数据。每个有独立记录的浏览器/设备都要导出，未同步队列也在 JSON 内。记录当前记录数和累计时长，结束正在运行的计时器。更新与验证期间暂停录入。
+## 1. 先备份各浏览器
 
-继续使用相同协议、域名和端口；例如 HTTP 改 HTTPS、IP 改域名都会变成另一个浏览器存储空间。不要清除站点数据、IndexedDB 或重置应用。ECS 数据卷不能代替浏览器备份，尤其是未启用同步时。
+在原网址的设置页导出**完整 JSON 备份**，分别保存每个有数据的浏览器和设备，包含未同步队列。CSV 不能完整恢复应用。记录历史记录数和累计时长，结束正在运行的计时器，更新验收期间暂停录入。
 
-## 2. 确认原部署，保存镜像与卷信息
+保持原协议、域名与端口；HTTP 改 HTTPS、IP 改域名会进入另一个浏览器存储空间。不要清除站点数据、IndexedDB 或重置应用。服务器数据卷不包含尚未同步的浏览器记录。
 
-先进入 **ECS 原来的仓库根目录**，不要新建部署目录。下面的容器 ID 从 `docker ps` 查到并手动填写；通过正在运行的容器读取原 Compose 项目名，防止生成新空卷。
+## 2. 核对原部署并保留镜像、配置
+
+进入 ECS **原仓库根目录**，查询正在运行的应用容器：
 
 ```bash
 docker ps --format 'table {{.ID}}\t{{.Names}}\t{{.Image}}'
 ```
 
-以下命令在同一个 Bash 会话执行：
+在同一个 Bash 会话中执行，替换容器 ID：
 
 ```bash
 set -euo pipefail
@@ -24,23 +26,38 @@ LT_CONTAINER='替换为当前 learntrack 应用容器ID'
 LT_PROJECT=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$LT_CONTAINER")
 test -n "$LT_PROJECT"
 test "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$LT_CONTAINER")" = learntrack
-LT_COMPOSE="$PWD/infrastructure/docker/docker-compose.yml"
-test -f "$LT_COMPOSE"
-lt_compose() { docker compose -p "$LT_PROJECT" -f "$LT_COMPOSE" "$@"; }
-lt_compose ps
+docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$LT_CONTAINER"
 docker inspect -f '{{range .Mounts}}{{println .Destination .Type .Name .Source}}{{end}}' "$LT_CONTAINER"
 ```
 
-核对应用容器与 `lt_compose ps` 一致，挂载目标有 `/data` 和 `/backups`。若原来还用了 override 文件、额外 env 文件或自定义卷，必须把同样参数加入函数，再核对；不要用默认配置覆盖线上自定义配置。
+按原部署选择下面三个变量；不要因为文件存在就改用另一份配置。
+
+| 原部署 | `LT_COMPOSE` | `LT_ENV` | `LT_PROXY` |
+| --- | --- | --- | --- |
+| HTTPS / Caddy | `infrastructure/docker/docker-compose.prod.yml` | `.env.production` | `caddy` |
+| 本机 HTTP / Nginx | `infrastructure/docker/docker-compose.yml` | `.env` | `nginx` |
+
+以已有生产配置为例：
+
+```bash
+LT_COMPOSE="$PWD/infrastructure/docker/docker-compose.prod.yml"
+LT_ENV="$PWD/.env.production"
+LT_PROXY=caddy
+test -f "$LT_COMPOSE"
+test -f "$LT_ENV"
+lt_compose() { docker compose -p "$LT_PROJECT" --env-file "$LT_ENV" -f "$LT_COMPOSE" "$@"; }
+lt_compose ps
+```
+
+若原部署用了 override 文件、自定义卷或额外环境参数，把**原来的全部参数**加入函数。核对 `lt_compose ps` 指向上面的容器，挂载目标含 `/data` 和 `/backups`。配置不一致时不要继续。
 
 ```bash
 LT_STAMP=$(date +%Y%m%d-%H%M%S)
 LT_SNAPSHOT="$HOME/learntrack-release-backups/$LT_STAMP"
 mkdir -p "$LT_SNAPSHOT"
 chmod 700 "$LT_SNAPSHOT"
-cp .env "$LT_SNAPSHOT/env"
+cp "$LT_ENV" "$LT_SNAPSHOT/env"
 cp "$LT_COMPOSE" "$LT_SNAPSHOT/docker-compose.yml"
-cp infrastructure/nginx/nginx.conf "$LT_SNAPSHOT/nginx.conf"
 git rev-parse HEAD > "$LT_SNAPSHOT/source-commit.txt"
 docker inspect -f '{{range .Mounts}}{{println .Destination .Type .Name .Source}}{{end}}' "$LT_CONTAINER" > "$LT_SNAPSHOT/mounts-before.txt"
 LT_OLD_IMAGE=$(docker inspect -f '{{.Image}}' "$LT_CONTAINER")
@@ -49,11 +66,11 @@ docker image tag "$LT_OLD_IMAGE" "$LT_ROLLBACK_IMAGE"
 docker image save "$LT_ROLLBACK_IMAGE" | gzip > "$LT_SNAPSHOT/old-image.tar.gz"
 ```
 
-该目录含配置密钥及学习数据，不放进 Git，也不放进网站静态目录。
+同时复制使用中的代理配置和 override 文件。备份目录含配置密钥及个人数据，不放进 Git 或网站静态目录。
 
-## 3. 停写后复制 SQLite 数据
+## 3. 停写后备份 SQLite 持久卷
 
-为得到一致备份，短暂停止应用容器，复制整个 `/data`（包含可能存在的 SQLite WAL/SHM 文件），而不是运行时只复制 `learntrack.db`。`docker cp` 支持已停止的容器。
+短暂停止应用，复制整个 `/data`（含可能存在的 WAL/SHM 文件）与 `/backups`；`docker cp` 支持已停止的容器。
 
 ```bash
 lt_compose stop learntrack
@@ -66,46 +83,52 @@ sha256sum "$LT_SNAPSHOT/server-data.tar.gz" > "$LT_SNAPSHOT/server-data.sha256"
 lt_compose start learntrack
 ```
 
-如果复制或检查失败，先执行 `lt_compose start learntrack` 恢复原服务，停止更新。成功后将备份目录另存到本地或其他存储，避免只在同一台 ECS 留一份。
+复制或检查失败时先执行 `lt_compose start learntrack` 恢复原服务，停止更新。成功后将备份另存到本地或其他存储。运行中仅复制主 `.db` 文件可能漏掉 WAL 中已提交的数据，不能代替此步骤。
 
-## 4. 上传完整修复并构建
+## 4. 拉取已验证提交并构建
 
-本地修复包含未跟踪的新文件（`packages/domain/src/tree.ts` 和测试等），单独 `git diff` 不包含它们。发布前将全部所需修改纳入一个明确的 Git 提交并推送；服务器先确认 `git status --short` 无待处理修改，再拉取对应提交。不要执行 `reset --hard` 覆盖服务器改动，也不要替换原 `.env`。
+服务器先执行 `git status --short`，有修改时保留并处理，不能用 `reset --hard` 覆盖。确认发布分支后拉取已验证的提交；不要覆盖原环境文件中的账号、密码、盐与会话密钥。
 
 ```bash
 git status --short
-# 确认工作树、分支与目标提交后，执行实际发布仓库的拉取命令。
-# 例如在正确分支上：git pull --ff-only
+git pull --ff-only
 lt_compose build learntrack
 ```
 
-构建失败时原容器仍然运行，不继续下一步。发布内容应已在本地通过 `npm run build` 和 `npm test`。
+构建失败时原容器仍可运行，不进行下一步。AI 和 GitHub 可选配置参考 [学习工作台说明](study-workspace.md)，使用原环境文件追加即可；无需更换数据卷。
 
-## 5. 替换应用，复用原卷
+## 5. 更新容器并核对数据
 
 ```bash
 lt_compose up -d --no-deps learntrack
-# Nginx 可能仍缓存旧容器 IP；重启以重新解析 learntrack。
-lt_compose restart nginx
-lt_compose ps
-curl --fail --silent --show-error http://127.0.0.1:8787/api/v1/health
 LT_NEW_CONTAINER=$(lt_compose ps -q learntrack)
+docker exec "$LT_NEW_CONTAINER" node -e 'fetch("http://127.0.0.1:8787/api/v1/health").then(async r=>{console.log(await r.text());process.exit(r.ok?0:1)}).catch(()=>process.exit(1))'
+lt_compose restart "$LT_PROXY"
+lt_compose ps
 docker inspect -f '{{range .Mounts}}{{println .Destination .Type .Name .Source}}{{end}}' "$LT_NEW_CONTAINER" > "$LT_SNAPSHOT/mounts-after.txt"
 diff -u "$LT_SNAPSHOT/mounts-before.txt" "$LT_SNAPSHOT/mounts-after.txt"
-lt_compose logs --tail=80 learntrack nginx
+lt_compose logs --tail=80 learntrack "$LT_PROXY"
 ```
 
-健康检查应返回 `ok: true`、`db: true`；健康检查本身不证明历史数据完整，必须核对挂载和浏览器记录。若挂载不同或出现空数据，停止录入并回查项目名、配置与卷，不能初始化或覆盖原卷。
+健康检查应返回 `ok: true`、`db: true`；它不能证明历史数据完整。核对数据卷名称、来源与目标一致，再从原访问网址检查服务。
 
-在原网址联网刷新页面，必要时关闭旧标签页后重新打开；不要清除站点数据。验证：历史记录数/时长相同；设置新建科目和编辑已有科目的颜色正常；新科目可搜索并保存记录；给该科目添加活动后科目仍可选择；总览可直接添加待办；统计与 JSON 导出正常。启用同步的设备应先点击“检查同步内容”，核对最近一条变化，再确认同步并检查同步状态。不要在正式浏览器上为测试恢复而导入备份（导入会替换本地数据）。
+关闭旧标签页后联网重新打开，所有设备更新到新版后再使用新增实体的同步。核对：
 
-**不要执行** `docker compose down -v`、`docker volume prune` 或删除 `lt-data`/`lt-backups`。普通更新不需要 `down`，也不需要导入旧备份。
+- 历史学习记录数、时长、科目颜色及待同步队列保持一致；新科目仍可搜索并保存记录。
+- 计划能创建、编辑及生成任务，已完成任务不因调整计划删除；练习与讲次进度刷新后保留。
+- 完整 JSON 导出含 `studyPlans`、`practiceAttempts` 和 `courseProgress`。
+- 同步先预览最近变化，再确认；首次同步后检查冲突与待上传数。
+- 如配置在线功能，分别验证 AI 生成建议后确认加入、GitHub 和力扣账号的真实日历。
 
-## 6. 回滚代码，保留当前数据
+如看到空数据或挂载不一致，停止录入并检查项目名、卷、原网址；不要初始化或覆盖原卷。不要在正式浏览器上通过导入备份测试恢复，恢复会替换当前本地数据。
 
-本次无数据库结构变更，应用出错时优先回滚镜像，仍使用原数据卷；不要为了回滚代码覆盖数据库，否则会丢失备份之后的新记录。
+**不要执行** `docker compose down -v`、`docker volume prune` 或删除数据卷。普通更新不需要 `down`，也不需要导入旧备份。
 
-在同一 Bash 会话中执行：
+## 6. 回滚限制
+
+浏览器一旦打开新版，就升级到了 IndexedDB 4。旧前端（最高版本 3）不能直接打开升级后的数据库；旧 API 也不认识新增同步实体。数据仍在，但回滚到旧镜像不能保证继续使用或同步。因此新版前端已被使用时，优先修复并发布兼容版本，保留数据卷与各浏览器完整备份，暂停同步。
+
+只有在客户端尚未打开新版，或已准备好匹配的兼容前端/API 时，才使用旧镜像回滚代码：
 
 ```bash
 cat > "$LT_SNAPSHOT/rollback.override.yml" <<EOF
@@ -113,11 +136,10 @@ services:
   learntrack:
     image: $LT_ROLLBACK_IMAGE
 EOF
-docker compose -p "$LT_PROJECT" -f "$LT_COMPOSE" -f "$LT_SNAPSHOT/rollback.override.yml" up -d --no-deps --no-build learntrack
-lt_compose restart nginx
-curl --fail --silent --show-error http://127.0.0.1:8787/api/v1/health
+docker compose -p "$LT_PROJECT" --env-file "$LT_ENV" -f "$LT_COMPOSE" -f "$LT_SNAPSHOT/rollback.override.yml" up -d --no-deps --no-build learntrack
+lt_compose restart "$LT_PROXY"
 ```
 
-若镜像被清理，可先 `docker image load -i "$LT_SNAPSHOT/old-image.tar.gz"`。回滚前后都保留浏览器 JSON；旧版本可能不能正确显示直接挂在科目上的新记录，也可能拒绝导入新版 JSON，这些数据不能因此删除。真正恢复服务器数据库属于另一个操作，应停写并先备份故障现场、核对所有设备未同步数据，再针对确认的原卷恢复。
+原部署含其他 override 时仍要带上全部原参数。镜像被清理后可先 `docker image load -i "$LT_SNAPSHOT/old-image.tar.gz"`。回滚镜像仍复用原卷，**不恢复旧数据库**；直接用备份覆盖数据库会丢掉备份之后的记录。
 
-后续重新发布新版时移除回滚 override 参数。整个方案尚未在你的 ECS 执行。
+真正恢复数据库是另一项操作：停写、保留故障现场、核对每个设备的未同步数据和具体原卷后再执行。后续发布新版时去掉回滚 override 参数。本方案未在你的 ECS 执行。

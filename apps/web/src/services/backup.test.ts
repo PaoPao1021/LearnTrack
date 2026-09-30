@@ -105,6 +105,21 @@ describe('local backup and CSV export', () => {
     expect(await db.conflicts.count()).toBe(0);
   });
 
+  it('restores version 3 backups that omit all study collections', async () => {
+    const original = { id: crypto.randomUUID(), level: 'major', parentId: null, name: '原科目', color: '#3b82f6', archived: false, sortOrder: 0, createdAt, updatedAt: createdAt, deletedAt: null, version: 1 } as Category;
+    await db.categories.add(original);
+    const { blob } = await exportFullBackup();
+    const legacy = JSON.parse(await blob.text()) as { manifest: { checksum: string; counts: Record<string, number> }; data: Record<string, unknown> };
+    for (const key of ['studyPlans', 'practiceAttempts', 'courseProgress']) { delete legacy.data[key]; delete legacy.manifest.counts[key]; }
+    const text = await withChecksum(legacy);
+    await db.categories.clear();
+    const summary = await inspectBackup(text);
+    expect(summary.counts.categories).toBe(1);
+    await restoreBackup(text);
+    expect(await db.categories.get(original.id)).toEqual(original);
+    expect(await Promise.all([db.studyPlans.count(), db.practiceAttempts.count(), db.courseProgress.count()])).toEqual([0, 0, 0]);
+  });
+
   it('does not inherit device or login settings from a backup when this device has none', async () => {
     await db.settings.bulkPut([
       { key: 'deviceId', value: 'backup-device' },

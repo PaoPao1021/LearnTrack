@@ -102,6 +102,8 @@ export interface Todo {
   scheduledDate: string | null;
   dueDate: string | null;
   done: boolean;
+  planId?: string | null;
+  estimatedMinutes?: number | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -148,7 +150,7 @@ export interface AppSettings {
 export interface SyncOp {
   opId: string;
   deviceId: string;
-  entity: 'category' | 'entry' | 'path' | 'pathItem' | 'progressEvent' | 'todo' | 'goal' | 'settings' | 'quickAction';
+  entity: 'category' | 'entry' | 'path' | 'pathItem' | 'progressEvent' | 'todo' | 'goal' | 'settings' | 'quickAction' | 'studyPlan' | 'practiceAttempt' | 'courseProgress';
   entityId: string;
   baseVersion: number | null;
   /** null payload with deletedAt marker = tombstone */

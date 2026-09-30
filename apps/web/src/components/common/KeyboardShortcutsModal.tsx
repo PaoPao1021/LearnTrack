@@ -11,18 +11,18 @@ const SHORTCUTS: ShortcutGroup[] = [
   {
     category: '专注与计时',
     items: [
-      { key: 'Space', description: '开始 / 暂停计时器' },
-      { key: 'Z', description: '开启 / 退出全屏禅模式' },
-      { key: 'N', description: '快速打开补录 / 填时间段' },
+      { key: 'Space', description: '暂停 / 继续正在运行的计时器' },
     ],
   },
   {
     category: '导航切换',
     items: [
-      { key: '1', description: '跳转到 总览仪表盘' },
-      { key: '2', description: '跳转到 学习记录' },
-      { key: '3', description: '跳转到 统计分析' },
-      { key: '4', description: '跳转到 学习路线' },
+      { key: '1', description: '查看今日安排' },
+      { key: '2', description: '打开学习计划' },
+      { key: '3', description: '打开练习记录' },
+      { key: '4', description: '打开统计' },
+      { key: '5', description: '打开学习路线' },
+      { key: 'Ctrl / Cmd + B', description: '展开 / 收起桌面导航' },
     ],
   },
   {
@@ -50,7 +50,7 @@ export function KeyboardShortcutsModal({ open, onClose }: { open: boolean; onClo
           </div>
           <div>
             <h2 id="shortcuts-title" className="display text-base font-bold tracking-tight">快捷键速查表</h2>
-            <p className="text-[11px] text-[var(--text-tertiary)]">键盘效率达人的专属操作台</p>
+            <p className="text-xs text-[var(--text-secondary)]">输入文本时不触发这些快捷键</p>
           </div>
         </div>
         <button

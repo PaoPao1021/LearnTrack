@@ -25,3 +25,5 @@ var/
 /tmp
 .zcode/
 .playwright-cli/
+.impeccable/review/
+output/playwright/

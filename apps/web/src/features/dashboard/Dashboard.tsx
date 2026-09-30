@@ -17,11 +17,12 @@ import {
 import { ZenModeModal } from '../../components/common/ZenModeModal';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ChronoRing } from '../../components/common/ChronoRing';
-import { CelebrationModal } from '../../components/common/CelebrationModal';
 import { DatePickerCapsule } from '../../components/common/DatePickerCapsule';
 import { InteractiveDurationCards } from './InteractiveDurationCards';
 import { soundscape } from '../../services/soundscape';
 import { showToast } from '../../components/common/Toast';
+import { Link } from 'react-router-dom';
+import { practiceStats } from '@learntrack/domain';
 
 const TIMER_PRESETS = [
   { labelKey: 'timer.presetCountUp', val: '' },
@@ -41,9 +42,9 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
   const [autoZen, setAutoZen] = useState(() => {
     try {
       const saved = localStorage.getItem('learntrack_auto_zen');
-      return saved !== null ? saved === 'true' : true;
+      return saved !== null ? saved === 'true' : false;
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -56,7 +57,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
   const handleStartTimer = () => {
     soundscape.playPop();
     timer.start(pickActivity, '', countdownMin === '' ? null : Math.round((countdownMin as number) * 60));
-    showToast('专注计时已启动 · 沉浸心流吧', 'info');
+    showToast('计时已开始', 'info');
     if (autoZen) {
       setZenOpen(true);
       try {
@@ -73,11 +74,12 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
     const actName = target ? pathLabelOf(target) : (timer.label || '专注');
     const actColor = target?.subject.color ?? 'var(--accent)';
     const dur = elapsed;
-    soundscape.playSuccess();
-    await timer.stop();
-    if (dur >= 10 && onFinishSession) {
-      onFinishSession(actName, actColor, dur);
-    }
+    try {
+      await timer.stop();
+      soundscape.playSuccess();
+      showToast(`已保存 ${actName}：${formatClock(dur)}`, 'success');
+      if (dur >= 10 && onFinishSession) onFinishSession(actName, actColor, dur);
+    } catch { showToast('记录保存失败，请重试', 'warn'); }
   };
 
   if (timer.status === 'idle') {
@@ -86,7 +88,6 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
         <section className="card card-hero rise p-6 md:p-8">
           <div className="mb-5 flex items-end justify-between">
             <div>
-              <div className="label">{t('label.focus')}</div>
               <h2 className="display text-2xl md:text-3xl font-bold tracking-tight">{t('timer.startTitle')}</h2>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)] shadow-xs">
@@ -281,7 +282,6 @@ function QuickActions({ onOpenEntry }: { onOpenEntry: (activityId: string) => vo
     <section className="card rise rise-1 p-6 relative z-20">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between relative z-30">
         <div>
-          <div className="label">{t('label.quickCapture')}</div>
           <h2 className="display text-xl">{t('qa.title')}</h2>
         </div>
         <div className="w-full sm:w-64">
@@ -336,22 +336,32 @@ function QuickActions({ onOpenEntry }: { onOpenEntry: (activityId: string) => vo
   );
 }
 
+function StudySummary({ date }: { date: string }) {
+  const attempts = useLiveQuery(() => db.practiceAttempts.filter((r) => !r.deletedAt).toArray(), [], []);
+  const plans = useLiveQuery(() => db.studyPlans.filter((p) => !p.deletedAt && p.status === 'active' && p.startDate <= date && p.endDate >= date).toArray(), [date], []);
+  const stats = practiceStats(attempts.filter((r) => r.learningDate === date));
+  const due = practiceStats(attempts).review.filter((r) => r.reviewDate && r.reviewDate <= date);
+  return <section className="work-section"><div className="section-heading"><h2>练习与计划</h2><Link className="text-sm" to="/practice">记录练习</Link></div><div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 text-sm"><span>练习 {stats.uniqueQuestions} 道题</span><span>正确 {stats.correct} / {stats.answered} 次作答</span><Link to="/practice">待复习 {due.length} 题</Link></div>{plans.length > 0 && <ul className="mt-4 text-sm space-y-2">{plans.map((p) => <li key={p.id}><Link to="/plans">{p.title}</Link><span className="muted"> · 每日目标 {p.dailyMinutes} 分钟 / {p.dailyQuestions} 题</span></li>)}</ul>}</section>;
+}
+
 function TodayTodos({ targetDate }: { targetDate?: string }) {
   const { t } = useI18n();
   const todos = useLiveQuery(() => db.todos.filter((td) => !td.deletedAt).toArray(), [], []);
+  const plans = useLiveQuery(() => db.studyPlans.toArray(), [], []);
+  const inactivePlans = new Set(plans.filter((p) => p.deletedAt || p.status !== 'active').map((p) => p.id));
+  const visibleTodos = todos.filter((td) => !td.planId || !inactivePlans.has(td.planId));
   const today = targetDate ?? todayKey();
   const [newTodo, setNewTodo] = useState('');
   const [adding, setAdding] = useState(false);
-  const overdue = (todos ?? []).filter((td) => !td.done && td.dueDate && td.dueDate < today);
+  const overdue = visibleTodos.filter((td) => !td.done && td.dueDate && td.dueDate < today);
   const overdueIds = new Set(overdue.map((td) => td.id));
-  const todays = (todos ?? []).filter((td) => !td.done && td.scheduledDate && td.scheduledDate <= today && !overdueIds.has(td.id));
-  const doneToday = (todos ?? []).filter((td) => td.done && td.scheduledDate === today);
+  const todays = visibleTodos.filter((td) => !td.done && td.scheduledDate && td.scheduledDate <= today && !overdueIds.has(td.id));
+  const doneToday = visibleTodos.filter((td) => td.done && td.scheduledDate === today);
 
   return (
     <section className="card rise rise-2 p-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <div className="label">{t('label.agenda')}</div>
           <h2 className="display text-xl">{t('todos.title')}</h2>
         </div>
         <ListTodo size={20} strokeWidth={1.6} className="opacity-30" />
@@ -481,7 +491,6 @@ function GoalsProgress({ todaySeconds, weekSeconds }: { todaySeconds: number; we
     <section className="card rise rise-3 p-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <div className="label">{t('label.goals')}</div>
           <h2 className="display text-xl">{t('goals.title')}</h2>
         </div>
         <Target size={20} strokeWidth={1.6} className="opacity-30" />
@@ -526,7 +535,6 @@ function PathProgress() {
       <section className="card rise rise-3 p-6">
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <div className="label">{t('label.routes')}</div>
             <h2 className="display text-xl">{t('paths.title')}</h2>
           </div>
           <Route size={20} strokeWidth={1.6} className="opacity-30" />
@@ -547,7 +555,6 @@ function PathProgress() {
     <section className="card rise rise-3 p-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <div className="label">{t('label.routes')}</div>
           <h2 className="display text-xl">{t('paths.progressTitle')}</h2>
         </div>
         <Route size={20} strokeWidth={1.6} className="opacity-30" />
@@ -696,7 +703,7 @@ function TodayTimelineStream({
   return (
     <div className="mt-5 border-t border-[var(--border-soft)] pt-4">
       <div className="mb-2 flex items-center justify-between text-xs">
-        <span className="mono text-[10px] font-semibold tracking-wider text-[var(--text-tertiary)]">24H TIMELINE · 今日时光流</span>
+        <span className="text-xs text-[var(--text-tertiary)]">今日时间轴</span>
         <span className="tick-text text-[11px] font-medium text-[var(--text-secondary)]">
           {todayEntries.length} 次专注记录
         </span>
@@ -761,7 +768,6 @@ export default function Dashboard() {
   const { t } = useI18n();
   const timer = useTimer();
   const [entryModal, setEntryModal] = useState<{ open: boolean; activityId?: string }>({ open: false });
-  const [celebration, setCelebration] = useState<{ open: boolean; name: string; color: string; duration: number } | null>(null);
 
   const actualToday = todayKey();
   const [selectedDate, setSelectedDate] = useState(actualToday);
@@ -778,16 +784,6 @@ export default function Dashboard() {
   const selectedDateSeconds = stats.byDay.find((d) => d.date === selectedDate)?.seconds ?? 0;
   const weekSeconds = stats.totalSeconds;
 
-  const currentHour = new Date().getHours();
-  const greeting = useMemo(() => {
-    if (!isViewingToday) {
-      return `时光复盘 · ${selectedDate}`;
-    }
-    if (currentHour >= 5 && currentHour < 12) return '晨光正好 · 开启专注';
-    if (currentHour >= 12 && currentHour < 18) return '午后时光 · 保持节奏';
-    if (currentHour >= 18 && currentHour < 22) return '晚风轻拂 · 复盘沉淀';
-    return '静谧深夜 · 沉浸心流';
-  }, [currentHour, isViewingToday, selectedDate]);
 
   const activeCategory = useMemo(() => {
     if (!timer.activityId || !categories) return null;
@@ -803,15 +799,10 @@ export default function Dashboard() {
     >
       <header className="rise mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <span className={`h-2 w-2 rounded-full ${isViewingToday ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'}`} />
-            <span className="mono text-[11px] font-semibold tracking-wider text-[var(--accent)]">
-              {greeting}
-            </span>
-          </div>
           <h1 className="display mt-0.5 text-2xl font-bold tracking-tight text-[var(--ink)]">
-            {isViewingToday ? t('nav.overview') : `复盘概览 (${selectedDate})`}
+            {isViewingToday ? t('nav.overview') : `学习记录 · ${selectedDate}`}
           </h1>
+          <p className="muted mt-2 text-sm">查看安排，开始计时，记录今天的练习。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <RhythmStreakCapsule stats={stats} entries={entries ?? []} today={actualToday} />
@@ -823,26 +814,23 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <TimerCard
-        onFinishSession={(name, color, duration) =>
-          setCelebration({ open: true, name, color, duration })
-        }
-      />
+      <div className="grid gap-5 lg:grid-cols-2"><TodayTodos targetDate={selectedDate} /><TimerCard /></div>
+      <StudySummary date={selectedDate} />
       <div className="relative z-20">
         <QuickActions onOpenEntry={(activityId) => setEntryModal({ open: true, activityId })} />
       </div>
 
-      <div className="relative z-10 grid gap-5 lg:grid-cols-2">
+      <div className="relative z-10">
         <InteractiveDurationCards
           todaySeconds={selectedDateSeconds}
           weekSeconds={weekSeconds}
+          selectedDate={selectedDate}
           runningElapsed={runningElapsed}
           onOpenAddEntry={() => setEntryModal({ open: true })}
           timelineSlot={
             <TodayTimelineStream entries={entries ?? []} categories={categories ?? []} today={selectedDate} />
           }
         />
-        <TodayTodos targetDate={selectedDate} />
       </div>
 
       <GoalsProgress todaySeconds={selectedDateSeconds} weekSeconds={weekSeconds} />
@@ -854,14 +842,6 @@ export default function Dashboard() {
         onClose={() => setEntryModal({ open: false })}
       />
 
-      <CelebrationModal
-        open={Boolean(celebration?.open)}
-        activityName={celebration?.name ?? ''}
-        activityColor={celebration?.color}
-        durationSeconds={celebration?.duration ?? 0}
-        todayTotalSeconds={selectedDateSeconds}
-        onClose={() => setCelebration(null)}
-      />
     </div>
   );
 }

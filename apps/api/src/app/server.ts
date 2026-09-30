@@ -11,6 +11,7 @@ import {
 } from '../middleware/session.js';
 import { SyncPushRequest, LoginRequest, validateEntityPayload } from '@learntrack/contracts';
 import { makeBackup } from './backups.js';
+import { registerExtensions } from './extensions.js';
 
 /** Parse the only proxy configurations that keep the forwarding boundary explicit. */
 export function trustProxyFromEnv(value = process.env.LT_TRUST_PROXY): false | string[] | ((address: string, hop: number) => boolean) {
@@ -113,6 +114,7 @@ export function buildServer(db: InstanceType<typeof DatabaseSync>) {
   });
 
   app.get('/api/v1/auth/session', async () => ({ ok: true }));
+  registerExtensions(app);
 
   // ---- sync push: idempotent by op_id; version conflicts returned for user resolution
   app.post('/api/v1/sync/push', async (request, reply) => {

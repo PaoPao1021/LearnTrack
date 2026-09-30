@@ -337,6 +337,11 @@ export function previousRange(from: string, to: string): { from: string; to: str
   return { from: addDays(from, -len), to: addDays(to, -len) };
 }
 
+/** Weekly totals end at the selected date, including days with no records. */
+export function averageDailySecondsForWeek(totalSeconds: number, throughDate: string): number {
+  return Math.round(totalSeconds / daysBetweenInclusive(mondayOf(throughDate), throughDate));
+}
+
 export function overlaps(a: { startedAt: number; endedAt: number }, b: { startedAt: number; endedAt: number }): boolean {
   return a.startedAt < b.endedAt && b.startedAt < a.endedAt;
 }

@@ -323,6 +323,18 @@ describe('LearnTrack API', () => {
       .toEqual(expect.objectContaining({ version: 2 }));
   });
 
+  it('requires a session for every online extension and exposes the extension contract after login', async () => {
+    for (const url of ['/api/v1/agent/capabilities', '/api/v1/integrations/contributions?provider=github&username=user&year=2026']) {
+      expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
+    }
+    expect((await app.inject({ method: 'POST', url: '/api/v1/agent/run', payload: {} })).statusCode).toBe(401);
+    const cookie = await loginCookie();
+    const capabilities = await app.inject({ method: 'GET', url: '/api/v1/agent/capabilities', headers: { cookie } });
+    expect(capabilities.statusCode).toBe(200);
+    expect(capabilities.json()).toMatchObject({ version: 1, tasks: ['review', 'plan'], requiresReview: true });
+    expect((await app.inject({ method: 'POST', url: '/api/v1/agent/run', headers: { cookie }, payload: { task: 'execute' } })).statusCode).toBe(400);
+  });
+
   it('does not let forged forwarded IPs bypass login rate limiting by default', async () => {
     for (let index = 0; index < 5; index += 1) {
       const response = await app.inject({

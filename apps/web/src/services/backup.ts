@@ -12,9 +12,11 @@ import {
   QuickActionDto,
   SettingDto,
   TodoDto,
+  StudyPlanDto, PracticeAttemptDto, CourseProgressDto,
   validateEntityPayload,
 } from '@learntrack/contracts';
 import { z } from 'zod';
+import type { StudyPlan, PracticeAttempt, CourseProgress } from '@learntrack/domain';
 
 export interface BackupManifest {
   formatVersion: 1;
@@ -37,14 +39,16 @@ export async function exportFullBackup(): Promise<{ manifest: BackupManifest; bl
   const data = await db.transaction(
     'r',
     [db.categories, db.entries, db.paths, db.pathItems, db.progressEvents, db.todos, db.goals,
-      db.quickActions, db.settings, db.pendingOps, db.conflicts],
+      db.quickActions, db.settings, db.pendingOps, db.conflicts, db.studyPlans, db.practiceAttempts, db.courseProgress],
+    // Additive tables are in the same snapshot as their related tasks.
     async () => {
       const [categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps, conflicts] = await Promise.all([
         db.categories.toArray(), db.entries.toArray(), db.paths.toArray(), db.pathItems.toArray(),
         db.progressEvents.toArray(), db.todos.toArray(), db.goals.toArray(), db.quickActions.toArray(),
         db.settings.toArray(), db.pendingOps.toArray(), db.conflicts.toArray(),
       ]);
-      return { categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps, conflicts };
+      const [studyPlans, practiceAttempts, courseProgress] = await Promise.all([db.studyPlans.toArray(), db.practiceAttempts.toArray(), db.courseProgress.toArray()]);
+      return { categories, entries, paths, pathItems, progressEvents, todos, goals, quickActions, settings, pendingOps, conflicts, studyPlans, practiceAttempts, courseProgress };
     },
   );
   const json = JSON.stringify(data);
@@ -71,6 +75,8 @@ const COLLECTIONS = [
 ] as const;
 
 const CONFLICTS = 'conflicts' as const;
+const STUDY_COLLECTIONS = ['studyPlans', 'practiceAttempts', 'courseProgress'] as const;
+const STUDY_SCHEMAS = { studyPlans: StudyPlanDto.array(), practiceAttempts: PracticeAttemptDto.array(), courseProgress: CourseProgressDto.array() };
 
 const COLLECTION_SCHEMAS = {
   categories: CategoryDto.array(),
@@ -98,7 +104,7 @@ const ConflictBackupDto = z.object({
   opGroupId: z.string().nullable().optional(),
 });
 
-type BackupData = Record<(typeof COLLECTIONS)[number], unknown[]> & { conflicts: unknown[] };
+type BackupData = Record<(typeof COLLECTIONS)[number] | (typeof STUDY_COLLECTIONS)[number], unknown[]> & { conflicts: unknown[] };
 
 function validateReferences(data: Record<string, unknown[]>): void {
   const categories = data.categories as Category[];
@@ -187,6 +193,17 @@ function parseBackup(text: string): { manifest: BackupManifest; data: BackupData
   if (!parsed.data || typeof parsed.data !== 'object') throw new Error('备份缺少数据区，已拒绝导入。');
   const rawData = parsed.data as Record<string, unknown>;
   const data = { ...rawData, conflicts: rawData.conflicts ?? [] } as BackupData;
+  for (const key of STUDY_COLLECTIONS) {
+    const rows = rawData[key];
+    if (rows === undefined && manifestResult.data.counts[key] === undefined) data[key] = [];
+    else {
+      if (!Array.isArray(rows) || manifestResult.data.counts[key] !== rows.length || !STUDY_SCHEMAS[key].safeParse(rows).success) {
+        throw new Error(`备份 ${key} 字段或计数不合法，已拒绝导入。`);
+      }
+      const ids = rows.map((row: { id: string }) => row.id);
+      if (new Set(ids).size !== ids.length) throw new Error(`备份 ${key} 标识重复，已拒绝导入。`);
+    }
+  }
   for (const key of COLLECTIONS) {
     if (!Array.isArray(data[key])) throw new Error(`备份缺少 ${key} 数据表，已拒绝导入。`);
     if (manifestResult.data.counts[key] !== data[key]!.length) {
@@ -229,6 +246,10 @@ function parseBackup(text: string): { manifest: BackupManifest; data: BackupData
     }
   }
   validateReferences(data);
+  const planIds = new Set((data.studyPlans as StudyPlan[]).map((row) => row.id));
+  if ((data.todos as Todo[]).some((row) => row.planId && !planIds.has(row.planId))) throw new Error('备份待办引用了不存在的计划，已拒绝导入。');
+  const categoryIds = new Set((data.categories as Category[]).map((row) => row.id));
+  if ((data.studyPlans as StudyPlan[]).some((row) => row.subjectId && !categoryIds.has(row.subjectId))) throw new Error('备份计划引用了不存在的分类，已拒绝导入。');
   return { manifest: manifestResult.data as BackupManifest, data, rawData };
 }
 
@@ -260,7 +281,7 @@ export async function restoreBackup(text: string): Promise<void> {
   await db.transaction(
     'rw',
     [db.categories, db.entries, db.paths, db.pathItems, db.progressEvents, db.todos, db.goals,
-      db.quickActions, db.settings, db.pendingOps, db.conflicts],
+      db.quickActions, db.settings, db.pendingOps, db.conflicts, db.studyPlans, db.practiceAttempts, db.courseProgress],
     async () => {
       const preserved = new Map<string, unknown>();
       for (const key of preserveKeys) {
@@ -271,6 +292,7 @@ export async function restoreBackup(text: string): Promise<void> {
         db.categories.clear(), db.entries.clear(), db.paths.clear(), db.pathItems.clear(),
         db.progressEvents.clear(), db.todos.clear(), db.goals.clear(), db.quickActions.clear(),
         db.settings.clear(), db.pendingOps.clear(), db.conflicts.clear(),
+        db.studyPlans.clear(), db.practiceAttempts.clear(), db.courseProgress.clear(),
       ]);
       await db.categories.bulkAdd(parsed.data.categories as Category[]);
       await db.entries.bulkAdd(parsed.data.entries as EntryRecord[]);
@@ -280,6 +302,9 @@ export async function restoreBackup(text: string): Promise<void> {
       await db.todos.bulkAdd(parsed.data.todos as Todo[]);
       await db.goals.bulkAdd(parsed.data.goals as Goal[]);
       await db.quickActions.bulkAdd(parsed.data.quickActions as QuickAction[]);
+      await db.studyPlans.bulkAdd(parsed.data.studyPlans as StudyPlan[]);
+      await db.practiceAttempts.bulkAdd(parsed.data.practiceAttempts as PracticeAttempt[]);
+      await db.courseProgress.bulkAdd(parsed.data.courseProgress as CourseProgress[]);
       await db.settings.bulkAdd((parsed.data.settings as { key: string; value: unknown }[])
         .filter((setting) => !excludedBackupSettingKeys.includes(setting.key)));
       for (const [key, value] of preserved) await db.settings.put({ key, value });
