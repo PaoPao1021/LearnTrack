@@ -19,6 +19,7 @@ React / TypeScript 前端，IndexedDB 本地数据，Node / SQLite 同步服务�
 
 ## Brand Commitments
 沿用 LearnTrack 名称。用户要求降低 AI 生成感，贴合真实产品，并选择直接改代码验证流程。
+去 AI 味针对模板化布局、空泛文案和无意义装饰，不等于删除交互、动效与光效；保留有辨识度的视觉反馈和操作手感。
 
 ## Product Principles
 - 操作表达具体任务，数据表达明确口径。

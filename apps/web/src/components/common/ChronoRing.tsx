@@ -1,4 +1,5 @@
 import React from 'react';
+import { useVisibleMotion } from './useSurfaceMotion';
 
 export interface ChronoRingProps {
   size?: number;
@@ -29,6 +30,7 @@ export const ChronoRing: React.FC<ChronoRingProps> = ({
   className = '',
   children,
 }) => {
+  const motionRef = useVisibleMotion<HTMLDivElement>();
   const radius = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
@@ -51,7 +53,8 @@ export const ChronoRing: React.FC<ChronoRingProps> = ({
 
   return (
     <div
-      className={`relative flex items-center justify-center select-none ${className}`}
+      ref={motionRef}
+      className={`chrono-ring relative flex items-center justify-center select-none ${className}`}
       style={{ width: size, height: size }}
     >
       <svg

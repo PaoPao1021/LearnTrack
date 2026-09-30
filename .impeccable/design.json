@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-30T11:19:26.217Z",
+  "generatedAt": "2026-09-30T12:39:10.009Z",
   "title": "Design System: LearnTrack",
   "extensions": {
     "colorMeta": {
@@ -558,6 +558,11 @@
         "name": "duration-count-up",
         "value": "700ms",
         "purpose": "时长数字变化；prefers-reduced-motion 下直接更新。"
+      },
+      {
+        "name": "focus-breathe",
+        "value": "5s ease-in-out infinite; opacity .35 to .85",
+        "purpose": "仅运行中的计时器光层；暂停、离屏或标签页隐藏时停下，减少动态效果时使用静态光。"
       }
     ],
     "breakpoints": [
@@ -582,7 +587,7 @@
       "refersTo": "button-primary",
       "description": "保存与生成等主要操作；保留当前背景渐变及固定主题操作蓝。",
       "html": "<button class=\"ds-btn-primary\" type=\"button\">保存计划</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border-radius:8px;font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);font-size:14px;font-weight:600;letter-spacing:.01em;white-space:nowrap;cursor:pointer;transition:transform var(--dur-micro,140ms) var(--ease-spring,cubic-bezier(.22,1,.36,1)),background var(--dur-state,220ms) ease,color var(--dur-state,220ms) ease,border-color var(--dur-state,220ms) ease;}.ds-btn-primary:focus-visible{outline:2px solid var(--accent, #007aff);outline-offset:3px;}.ds-btn-primary:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}@media(prefers-reduced-motion:reduce){.ds-btn-primary{transition-duration:.01ms;}}.ds-btn-primary{border:1px solid transparent;color:#fff;background:linear-gradient(180deg,color-mix(in srgb,var(--accent-strong, #0064d2) 90%,white 10%),var(--accent-strong, #0064d2));box-shadow:none;}.ds-btn-primary:hover{transform:translateY(-1px);background:linear-gradient(180deg,color-mix(in srgb,var(--accent-strong, #0064d2) 84%,white 16%),color-mix(in srgb,var(--accent-strong, #0064d2) 94%,white 6%));}.ds-btn-primary:active{background:var(--accent-press,#0057ba);transform:none;}"
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border-radius:8px;font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);font-size:14px;font-weight:600;letter-spacing:.01em;white-space:nowrap;cursor:pointer;transition:transform var(--dur-micro,140ms) var(--ease-spring,cubic-bezier(.22,1,.36,1)),background var(--dur-state,220ms) ease,color var(--dur-state,220ms) ease,border-color var(--dur-state,220ms) ease;}.ds-btn-primary:focus-visible{outline:2px solid var(--accent, #007aff);outline-offset:3px;}.ds-btn-primary:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}@media(prefers-reduced-motion:reduce){.ds-btn-primary{transition-duration:.01ms;}}.ds-btn-primary{border:1px solid transparent;color:#fff;background:linear-gradient(180deg,color-mix(in srgb,var(--accent-strong, #0064d2) 90%,white 10%),var(--accent-strong, #0064d2));box-shadow:none;}.ds-btn-primary:hover{transform:translateY(-1px);background:linear-gradient(180deg,color-mix(in srgb,var(--accent-strong, #0064d2) 84%,white 16%),color-mix(in srgb,var(--accent-strong, #0064d2) 94%,white 6%));}.ds-btn-primary:active{background:var(--accent-press,#0057ba);transform:none;}.ds-btn-primary{box-shadow:inset 0 1px 0 rgba(255,255,255,.28),var(--shadow-accent,0 8px 20px -10px rgba(0,122,255,.3));transition:transform 140ms ease,background 220ms ease,box-shadow 220ms ease;}.ds-btn-primary:hover:not(:disabled){box-shadow:inset 0 1px 0 var(--edge-highlight-soft),0 5px 16px -6px color-mix(in srgb,var(--accent,#007aff) 35%,transparent);}.ds-btn-primary:active:not(:disabled){transform:translateY(1px) scale(.97);}.ds-btn-primary:disabled{transform:none;box-shadow:none;}@media(prefers-reduced-motion:reduce){.ds-btn-primary:hover,.ds-btn-primary:active:not(:disabled){transform:none;}}"
     },
     {
       "name": "次要按钮",
@@ -590,7 +595,7 @@
       "refersTo": "button-ghost",
       "description": "编辑、取消、导出等辅助操作；悬停改变表面与边界。",
       "html": "<button class=\"ds-btn-ghost\" type=\"button\">编辑</button>",
-      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border-radius:8px;font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);font-size:14px;font-weight:600;letter-spacing:.01em;white-space:nowrap;cursor:pointer;transition:transform var(--dur-micro,140ms) var(--ease-spring,cubic-bezier(.22,1,.36,1)),background var(--dur-state,220ms) ease,color var(--dur-state,220ms) ease,border-color var(--dur-state,220ms) ease;}.ds-btn-ghost:focus-visible{outline:2px solid var(--accent, #007aff);outline-offset:3px;}.ds-btn-ghost:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}@media(prefers-reduced-motion:reduce){.ds-btn-ghost{transition-duration:.01ms;}}.ds-btn-ghost{border:1px solid var(--border-glass,rgba(255,255,255,.6));color:var(--ink, #171c26);background-color:var(--surface-elevated, #ffffff);background-image:var(--glass-sheen,linear-gradient(165deg,rgba(255,255,255,.22),rgba(255,255,255,.05) 38%,rgba(255,255,255,0) 62%));box-shadow:none;}.ds-btn-ghost:hover{transform:translateY(-.5px);border-color:color-mix(in srgb,var(--accent, #007aff) 38%,var(--border-glass,rgba(255,255,255,.6)));color:var(--accent, #007aff);background-color:color-mix(in srgb,var(--accent, #007aff) 6%,var(--surface-elevated, #ffffff));}.ds-btn-ghost:active{transform:none;}:host-context(.dark) .ds-btn-ghost{background-image:none;}"
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border-radius:8px;font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);font-size:14px;font-weight:600;letter-spacing:.01em;white-space:nowrap;cursor:pointer;transition:transform var(--dur-micro,140ms) var(--ease-spring,cubic-bezier(.22,1,.36,1)),background var(--dur-state,220ms) ease,color var(--dur-state,220ms) ease,border-color var(--dur-state,220ms) ease;}.ds-btn-ghost:focus-visible{outline:2px solid var(--accent, #007aff);outline-offset:3px;}.ds-btn-ghost:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}@media(prefers-reduced-motion:reduce){.ds-btn-ghost{transition-duration:.01ms;}}.ds-btn-ghost{border:1px solid var(--border-glass,rgba(255,255,255,.6));color:var(--ink, #171c26);background-color:var(--surface-elevated, #ffffff);background-image:var(--glass-sheen,linear-gradient(165deg,rgba(255,255,255,.22),rgba(255,255,255,.05) 38%,rgba(255,255,255,0) 62%));box-shadow:none;}.ds-btn-ghost:hover{transform:translateY(-.5px);border-color:color-mix(in srgb,var(--accent, #007aff) 38%,var(--border-glass,rgba(255,255,255,.6)));color:var(--accent, #007aff);background-color:color-mix(in srgb,var(--accent, #007aff) 6%,var(--surface-elevated, #ffffff));}.ds-btn-ghost:active{transform:none;}.ds-btn-ghost{box-shadow:inset 0 1px 0 var(--edge-highlight-soft,rgba(255,255,255,.45)),var(--shadow-near,0 1px 2px rgba(18,26,44,.06));transition:transform 140ms ease,background 220ms ease,box-shadow 220ms ease;}.ds-btn-ghost:hover:not(:disabled){box-shadow:inset 0 1px 0 var(--edge-highlight-soft),0 5px 16px -6px color-mix(in srgb,var(--accent,#007aff) 35%,transparent);}.ds-btn-ghost:active:not(:disabled){transform:translateY(1px) scale(.97);}.ds-btn-ghost:disabled{transform:none;box-shadow:none;}@media(prefers-reduced-motion:reduce){.ds-btn-ghost:hover,.ds-btn-ghost:active:not(:disabled){transform:none;}}"
     },
     {
       "name": "带标签的输入",
@@ -606,7 +611,7 @@
       "refersTo": "rail-link",
       "description": "218px 桌面侧栏中的图标文字行；当前项使用浅强调色底和 Strong 文字。",
       "html": "<nav class=\"ds-rail\" aria-label=\"主导航样式示例\"><a class=\"ds-rail-link ds-active\" href=\"#\" aria-current=\"page\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M8 2v4M16 2v4\"/><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01\"/></svg><span>计划</span></a><a class=\"ds-rail-link\" href=\"#\"><span>练习</span></a></nav>",
-      "css": ".ds-rail{width:218px;padding:16px;background:var(--surface-content,#fff);font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);}.ds-rail-link{display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 14px;border-radius:8px;color:var(--text-secondary, #566070);font-size:14px;text-decoration:none;}.ds-rail-link:hover{background:color-mix(in srgb,var(--accent, #007aff) 5%,transparent);}.ds-rail-link.ds-active{background:color-mix(in srgb,var(--accent, #007aff) 9%,transparent);color:var(--accent-strong, #0064d2);font-weight:600;}.ds-rail-link:focus-visible{outline:2px solid var(--accent, #007aff);outline-offset:2px;}"
+      "css": ".ds-rail{width:218px;padding:16px;background:var(--surface-content,#fff);font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);}.ds-rail-link{display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 14px;border-radius:8px;color:var(--text-secondary, #566070);font-size:14px;text-decoration:none;}.ds-rail-link:hover{background:color-mix(in srgb,var(--accent, #007aff) 5%,transparent);}.ds-rail-link.ds-active{background:color-mix(in srgb,var(--accent, #007aff) 9%,transparent);color:var(--accent-strong, #0064d2);font-weight:600;}.ds-rail-link:focus-visible{outline:2px solid var(--accent, #007aff);outline-offset:2px;}.ds-rail-link{transition:background-color 140ms ease,color 140ms ease;}.ds-rail-link svg{transition:transform 220ms ease;}.ds-rail-link:hover svg{transform:translateX(2px);}@media(prefers-reduced-motion:reduce){.ds-rail-link:hover svg{transform:none;}}"
     },
     {
       "name": "计时预设胶囊",
@@ -620,17 +625,17 @@
       "name": "工作分区",
       "kind": "card",
       "refersTo": "work-section",
-      "description": "承载任务或表单的实色平面容器；不使用卡片投影与光斑。",
+      "description": "承载任务或表单的清晰容器；近处阴影与内缘高光定界，桌面指针微光位于内容下方。",
       "html": "<section class=\"ds-work-section\"><h2>每日安排</h2><p>这一天还没有任务。可以直接添加，或通过学习计划安排。</p></section>",
-      "css": ".ds-work-section{min-width:0;padding:24px;border:1px solid var(--border-soft, #dfe4eb);border-radius:12px;background:var(--surface-content,#fff);color:var(--ink, #171c26);font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);box-shadow:none;}.ds-work-section h2{margin:0;font-size:18px;font-weight:650;line-height:1.5;}.ds-work-section p{margin:16px 0 0;color:var(--text-secondary, #566070);font-size:14px;line-height:1.7;}@media(max-width:767px){.ds-work-section{padding:18px 16px;}}"
+      "css": ".ds-work-section{min-width:0;padding:24px;border:1px solid var(--border-soft, #dfe4eb);border-radius:12px;background:var(--surface-content,#fff);color:var(--ink, #171c26);font-family:var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif);box-shadow:inset 0 1px 0 var(--edge-inner,rgba(255,255,255,.55)),var(--shadow-near,0 1px 2px rgba(18,26,44,.06));}.ds-work-section h2{margin:0;font-size:18px;font-weight:650;line-height:1.5;}.ds-work-section p{margin:16px 0 0;color:var(--text-secondary, #566070);font-size:14px;line-height:1.7;}@media(max-width:767px){.ds-work-section{padding:18px 16px;}}.ds-work-section{transition:border-color 220ms ease;}.ds-work-section:hover{border-color:color-mix(in srgb,var(--accent,#007aff) 20%,var(--border-soft,#dfe4eb));}"
     }
   ],
   "narrative": {
     "northStar": "学习工作台",
-    "overview": "LearnTrack 的视觉由实际学习任务组织：查看安排、开始计时、记录题目，再回看结果。整体采用系统字体、实色内容区、细分隔线和靠近列表的操作，保持适合反复使用的工作密度。名称、真实产品感和直接在代码中验证流程，是已确定的品牌约束；本轮没有建立独立的插画或摄影世界。\n\n这份记录以当前应用外壳、今日流程、计划、练习、讲次模板、编程活动及已记录时长模块为依据。统计、学习路线、设置和旧记录等次级表面继承共享基础样式，但仍保留各自的旧组件与局部处理；这里不把它们视为完成了同一轮全面重写。全局样式中较早的玻璃、字体和光域声明，须以末尾覆盖规则及当前组件实际使用为准。\n\n完成审查的结论是修复手机日历账户字段、历史周日均口径、手机时长模块和键盘可操作的时间格式选择后可交付。审查图位于 `.impeccable/review/`，包含桌面、手机和深色计划等状态；图中的成绩与账户来自隔离测试数据，Agent 与日历服务使用模拟响应。它们说明布局与状态，不是用户成绩或在线服务可用性的证明。本轮没有新增随产品交付的栅格图像。",
+    "overview": "LearnTrack 的视觉由实际学习任务组织：查看安排、开始计时、记录题目，再回看结果。整体采用系统字体、清晰内容区、细分隔线和靠近列表的操作，保持适合反复使用的工作密度。用户明确要求保留交互、动效和光效；去 AI 味针对模板化布局与空泛文案，不能被解释为全面扁平化或取消视觉反馈。\n\n这份记录以当前应用外壳、今日流程、计划、练习、讲次模板、编程活动及已记录时长模块为依据。统计、学习路线、设置和旧记录等次级表面继承共享基础样式，但仍保留各自的旧组件与局部处理；这里不把它们视为完成了同一轮全面重写。全局样式中较早的玻璃、字体和光域声明，须以末尾覆盖规则及当前组件实际使用为准。\n\n完成审查的结论是修复手机日历账户字段、历史周日均口径、手机时长模块和键盘可操作的时间格式选择后可交付。审查图位于 `.impeccable/review/`，包含桌面、手机和深色计划等状态；图中的成绩与账户来自隔离测试数据，Agent 与日历服务使用模拟响应。它们说明布局与状态，不是用户成绩或在线服务可用性的证明。本轮没有新增随产品交付的栅格图像。",
     "keyCharacteristics": [
       "系统字体，中文和数字按系统原生方式排版。",
-      "浅色与深色均用实色工作区，以边界和分隔建立层次。",
+      "浅色与深色均保持清晰工作区，以边界、近处阴影和局部微光建立层次。",
       "蓝色承担操作和选中状态，分类色保留用户的数据含义。",
       "列表、指标行、原生表单和可横向滚动表格形成主要组件语言。",
       "手机保留五个底部主入口，表单随宽度重排。"
@@ -657,13 +662,13 @@
         "section": "layout"
       },
       {
-        "name": "The Flat Workspace Rule",
-        "body": "新工作分区以实色、细边界和分隔建立层次，不重新启用卡片光斑、环境光域或持续呼吸装饰。",
+        "name": "The Feedback Rule",
+        "body": "保留操作手感和局部光效；动效跟随操作与计时状态，不用全局禁用规则把所有组件压成静态平面。",
         "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** 沿用系统字体、实色表面、细边框与平面工作分区。",
+      "**Do** 沿用系统字体、清晰表面、细边框，并保留按钮、卡片和计时器的交互反馈。",
       "**Do** 让字段标签、单位、分母和日期范围跟随数据一起显示。",
       "**Do** 保留当前用户强调色、分类色及浅／深色配对，遵守 Strong 操作蓝的实际关系。",
       "**Do** 使用常见（44px）工作控件，保留可见焦点与原生选择操作。",
@@ -671,7 +676,7 @@
       "**Do** 保留模板、独立统计口径和 Agent 确认步骤的真实说明。"
     ],
     "donts": [
-      "**Don't** 把早期玻璃、环境光域、卡片光斑或呼吸效果重新推广到工作分区。",
+      "**Don't** 把去 AI 味等同于删除动效、光效、品牌图标或操作手感，也不把状态光效扩散为整页持续动画。",
       "**Don't** 增加第六个移动底部主入口，或让字段最小宽度撑出视口。",
       "**Don't** 用颜色替代结果文字、统计口径或错误说明。",
       "**Don't** 把审查测试数据、模拟服务响应或教材编号模板写成真实成绩、可用性保证或完整官方内容。",

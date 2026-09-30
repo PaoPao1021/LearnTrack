@@ -1,5 +1,5 @@
 /* ============================================================
-   LearnTrack 学习工作台：系统字体、实色表面与语义颜色。
+   LearnTrack 学习工作台：清晰内容、轻量光效与明确交互反馈。
    蓝色用于操作和选中状态，科目颜色来自用户设置。
    ============================================================ */
 
@@ -256,7 +256,7 @@ summary:focus-visible,
 .app-shell { display: flex; min-height: 100vh; background: var(--bg-base); color: var(--ink); }
 .app-sidebar { width: 218px; height: 100vh; position: sticky; top: 0; padding: 24px 16px; display: flex; flex-direction: column; background: var(--surface-content); border-right: 1px solid var(--border-soft); flex-shrink: 0; }
 .app-sidebar.collapsed { display: none; }
-.brand-name { font-size: 19px; font-weight: 700; letter-spacing: -.025em; }
+.brand-name { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; letter-spacing: -.025em; }
 .rail-link { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); font-size: 14px; }
 .rail-link:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .rail-link.active { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--accent-strong); font-weight: 600; }
@@ -267,7 +267,7 @@ summary:focus-visible,
 .page-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
 .page-heading h1 { font-size: 26px; font-weight: 700; letter-spacing: -.025em; line-height: 1.3; }
 .page-heading p { margin-top: 8px; font-size: 14px; color: var(--text-secondary); line-height: 1.65; }
-.work-section { background: var(--surface-content); border: 1px solid var(--border-soft); border-radius: 12px; padding: 24px; }
+.work-section { position: relative; isolation: isolate; background: var(--surface-content); border: 1px solid var(--border-soft); border-radius: 12px; padding: 24px; }
 .work-section h2, .section-heading h2 { font-size: 18px; font-weight: 650; line-height: 1.5; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .muted { color: var(--text-secondary); }
@@ -442,27 +442,28 @@ progress { accent-color: var(--accent-strong); }
   border-color: color-mix(in srgb, var(--border-soft) 60%, var(--edge-highlight-soft));
 }
 
-/* 纯色方框光标跟随渐变微光效果（Cursor Follow Spotlight） */
+/* The pointer light stays inside the surface and beneath its contents. */
 .card {
   isolation: isolate;
 }
-.card::before {
+.card::before, .work-section::before {
   content: none;
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: radial-gradient(
-    420px circle at var(--mouse-x, -9999px) var(--mouse-y, -9999px),
-    color-mix(in srgb, var(--accent) 12%, transparent),
+    360px circle at var(--mouse-x, -9999px) var(--mouse-y, -9999px),
+    color-mix(in srgb, var(--active-subject-color, var(--accent)) 9%, transparent),
     transparent 75%
   );
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 0;
+  z-index: -1;
 }
-.card:hover::before {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .card::before, .work-section::before { content: ''; }
+  [data-light-active='true']::before { opacity: 1; }
 }
 
 .hairline { border-color: var(--line); }
@@ -691,54 +692,36 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
     0 0 0 0.5px var(--border-soft);
 }
 
-/* ---------- 视觉重心卡（计时器）：更强的受光渐变与呼吸光环 ---------- */
+/* The active subject's light breathes while timing; pause holds an amber light. */
 .card-hero {
-  background-image: var(--glass-sheen-spec), var(--card-sheen);
+  background-image: radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--active-subject-color, var(--accent)) 6%, transparent), transparent 65%), var(--card-sheen);
 }
 
-@keyframes breath-accent {
-  0%, 100% {
-    box-shadow:
-      inset 0 1px 0 var(--edge-inner),
-      inset 0 -1px 0 var(--edge-bottom),
-      0 0 0 1px color-mix(in srgb, var(--active-subject-color, var(--accent)) 30%, transparent),
-      0 8px 24px -6px color-mix(in srgb, var(--active-subject-color, var(--accent)) 22%, transparent);
-  }
-  50% {
-    box-shadow:
-      inset 0 1px 0 var(--edge-inner),
-      inset 0 -1px 0 var(--edge-bottom),
-      0 0 0 2px color-mix(in srgb, var(--active-subject-color, var(--accent)) 55%, transparent),
-      0 14px 34px -4px color-mix(in srgb, var(--active-subject-color, var(--accent)) 38%, transparent);
-  }
+@keyframes focus-breathe {
+  0%, 100% { opacity: .35; }
+  50% { opacity: .85; }
 }
-
-@keyframes breath-warning {
-  0%, 100% {
-    box-shadow:
-      inset 0 1px 0 var(--edge-inner),
-      inset 0 -1px 0 var(--edge-bottom),
-      0 0 0 1px color-mix(in srgb, var(--warning) 30%, transparent),
-      0 8px 24px -6px color-mix(in srgb, var(--warning) 22%, transparent);
-  }
-  50% {
-    box-shadow:
-      inset 0 1px 0 var(--edge-inner),
-      inset 0 -1px 0 var(--edge-bottom),
-      0 0 0 2px color-mix(in srgb, var(--warning) 55%, transparent),
-      0 14px 34px -4px color-mix(in srgb, var(--warning) 36%, transparent);
-  }
+.card-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--timer-light, var(--accent)) 35%, transparent), 0 10px 30px -8px color-mix(in srgb, var(--timer-light, var(--accent)) 30%, transparent);
+  transition: opacity var(--dur-state) ease;
 }
-
 .card-hero.is-running {
-  animation: breath-accent 3.5s ease-in-out infinite;
+  --timer-light: var(--active-subject-color, var(--accent));
   border-color: color-mix(in srgb, var(--active-subject-color, var(--accent)) 45%, var(--border-soft));
 }
-
+.card-hero.is-running::after { animation: focus-breathe 5s ease-in-out infinite; }
 .card-hero.is-paused {
-  animation: breath-warning 3s ease-in-out infinite;
+  --timer-light: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 45%, var(--border-soft));
 }
+.card-hero.is-paused::after { opacity: .5; }
 
 /* ---------- 预设胶囊按钮 (Preset Chips) ---------- */
 .preset-chip {
@@ -783,12 +766,14 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
 .liquid-progress-bar {
   height: 100%;
   border-radius: 999px;
-  background: var(--accent-strong);
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
+  box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* ---------- 勾选微动效 ---------- */
 @keyframes check-pop {
   0% { transform: scale(0.85); }
+  60% { transform: scale(1.08); }
   100% { transform: scale(1); }
 }
 .checkbox-bounce:checked {
@@ -812,13 +797,13 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
 
 /* ---------- 动效 ---------- */
 @keyframes rise {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: .8; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
-.rise { animation: rise 0.5s var(--ease-out) both; }
-.rise-1 { animation-delay: 0.05s; }
-.rise-2 { animation-delay: 0.1s; }
-.rise-3 { animation-delay: 0.15s; }
+.rise { animation: rise 240ms var(--ease-out) backwards; }
+.rise-1 { animation-delay: 25ms; }
+.rise-2 { animation-delay: 50ms; }
+.rise-3 { animation-delay: 75ms; }
 
 /* 浮层：从触发处附近自然展开（轻微位移 + 透明度 + 0.97→1） */
 @keyframes overlay-in {
@@ -857,15 +842,30 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
   color: var(--text-tertiary);
 }
 
-/* Final surface rules override the former glass/spotlight treatment. */
-.card, .card-hero { background-image: none; box-shadow: none; border-radius: 12px; }
-.card::before, .card-hero::after { content: none; }
-.glass-regular, .glass-emphasis, .glass-light { background: var(--surface-elevated); backdrop-filter: none; box-shadow: var(--shadow-near); border-color: var(--border-soft); }
+/* Working surfaces keep their depth and feedback without obscuring the data. */
+.card, .work-section { box-shadow: inset 0 1px 0 var(--edge-inner), var(--shadow-near); border-radius: 12px; }
+.work-section { transition: border-color var(--dur-state) ease, box-shadow var(--dur-state) ease; }
 .text-gradient-accent { background: none; -webkit-text-fill-color: currentColor; color: var(--accent-strong); }
-.card-hero.is-running, .card-hero.is-paused, .rise, .rise-1, .rise-2, .rise-3 { animation: none; }
-.btn-primary, .btn-ghost { min-height: 44px; border-radius: 8px; box-shadow: none; }
-.btn-primary:hover, .btn-ghost:hover { box-shadow: none; }
-.btn-primary:active, .btn-ghost:active { transform: none; }
+.btn-primary, .btn-ghost { min-height: 44px; border-radius: 8px; }
+.btn-primary:active:not(:disabled), .btn-ghost:active:not(:disabled) { transform: translateY(1px) scale(.97); }
+.btn-primary:disabled, .btn-ghost:disabled { transform: none; box-shadow: none; }
+.rail-link, .app-bottom-nav a, .work-tabs button, .task-check { transition: color var(--dur-micro) ease, background-color var(--dur-micro) ease, border-color var(--dur-micro) ease, transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-state) ease; }
+.rail-link svg, .app-bottom-nav a svg { transition: transform var(--dur-state) var(--ease-out); }
+.rail-link.active { box-shadow: inset 0 1px 0 var(--edge-inner), 0 3px 12px -6px color-mix(in srgb, var(--accent) 25%, transparent); }
+.work-tabs button:hover, .task-check:hover { background-color: color-mix(in srgb, var(--accent) 7%, transparent); }
+.task-check.is-done:hover { background-color: var(--accent-strong); }
+.task-check:active:not(:disabled) { transform: scale(.93); }
+.task-check.is-done svg { animation: check-pop 220ms var(--ease-out); }
+.app-bottom-nav a.active svg { transform: translateY(-2px); }
+@media (hover: hover) and (pointer: fine) {
+  .rail-link:hover svg { transform: translateX(2px); }
+  .work-section:hover { border-color: color-mix(in srgb, var(--accent) 20%, var(--border-soft)); }
+}
+.brand-mark .brand-aura { animation: none; opacity: .35; }
+.brand-mark :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: paused; }
+.brand-name:hover .brand-aura, .brand-name:focus-visible .brand-aura { opacity: .7; }
+.brand-name:hover :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem), .brand-name:focus-visible :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: running; }
+[data-motion-paused='true']::after, [data-motion-paused='true'] :is(.animate-spin, .chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: paused !important; }
 .input { min-height: 44px; border-radius: 8px; }
 .modal-panel { max-height: 90dvh; overflow-y: auto; }
 .work-section, .workspace-main, .task-row > div { min-width: 0; }
@@ -878,8 +878,20 @@ progress { appearance: none; border: 0; border-radius: 4px; overflow: hidden; ba
 progress::-webkit-progress-bar { background: var(--border-soft); }
 progress::-webkit-progress-value { background: var(--accent-strong); }
 progress::-moz-progress-bar { background: var(--accent-strong); }
-.dark .btn-ghost { background-image: none; box-shadow: none; }
 .contribution-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
 .contribution-filters > .field { width: auto; min-width: 0; }
 .contribution-filters > .field:nth-child(-n+2) { grid-column: 1 / -1; }
 @media (min-width: 640px) { .contribution-filters { grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) 100px auto; }.contribution-filters > .field:nth-child(-n+2) { grid-column: auto; } }
+
+@media (max-width: 767px) {
+  .app-bottom-nav { background: color-mix(in srgb, var(--surface-content) 92%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app-bottom-nav { background: var(--surface-content); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-hero.is-running::after { animation: none; opacity: .6; }
+  .task-check.is-done svg, .chrono-ring .animate-spin, .brand-mark * { animation: none !important; }
+  .rail-link:hover svg, .app-bottom-nav a.active svg, .task-check:active, .btn-primary:hover, .btn-ghost:hover, .btn-primary:active:not(:disabled), .btn-ghost:active:not(:disabled), .brand-mark > div { transform: none; }
+  .rail-link, .app-bottom-nav a, .work-tabs button, .task-check { transition-property: color, background-color, border-color; transition-duration: 100ms; }
+}

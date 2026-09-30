@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type CSSProperties } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
 import { useTimer, elapsedSeconds } from '../../stores/timer';
@@ -23,6 +23,7 @@ import { soundscape } from '../../services/soundscape';
 import { showToast } from '../../components/common/Toast';
 import { Link } from 'react-router-dom';
 import { practiceStats } from '@learntrack/domain';
+import { useVisibleMotion } from '../../components/common/useSurfaceMotion';
 
 const TIMER_PRESETS = [
   { labelKey: 'timer.presetCountUp', val: '' },
@@ -34,6 +35,7 @@ const TIMER_PRESETS = [
 ] as const;
 
 function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color: string, duration: number) => void }) {
+  const motionRef = useVisibleMotion<HTMLElement>();
   const { t } = useI18n();
   const timer = useTimer();
   const activities = useActivities();
@@ -85,7 +87,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
   if (timer.status === 'idle') {
     return (
       <>
-        <section className="card card-hero rise p-6 md:p-8">
+        <section ref={motionRef} className="card card-hero rise p-6 md:p-8">
           <div className="mb-5 flex items-end justify-between">
             <div>
               <h2 className="display text-2xl md:text-3xl font-bold tracking-tight">{t('timer.startTitle')}</h2>
@@ -174,7 +176,7 @@ function TimerCard({ onFinishSession }: { onFinishSession?: (name: string, color
 
   return (
     <>
-      <section className={`card card-hero rise p-6 md:p-8 ${timer.status === 'running' ? 'is-running' : 'is-paused'}`}>
+      <section ref={motionRef} style={{ '--active-subject-color': target?.subject.color ?? 'var(--accent)' } as CSSProperties} className={`card card-hero rise p-6 md:p-8 ${timer.status === 'running' ? 'is-running' : 'is-paused'}`}>
         <div className="flex flex-col sm:flex-row items-center gap-6 md:gap-8">
           <ChronoRing
             size={144}

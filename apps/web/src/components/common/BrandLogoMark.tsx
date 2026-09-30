@@ -1,4 +1,5 @@
 import React from 'react';
+import { useVisibleMotion } from './useSurfaceMotion';
 
 interface BrandLogoMarkProps {
   size?: number;
@@ -6,9 +7,12 @@ interface BrandLogoMarkProps {
 }
 
 export function BrandLogoMark({ size = 42, className = '' }: BrandLogoMarkProps) {
+  const motionRef = useVisibleMotion<HTMLDivElement>();
   return (
     <div
-      className={`group relative flex shrink-0 items-center justify-center select-none cursor-pointer ${className}`}
+      ref={motionRef}
+      aria-hidden="true"
+      className={`brand-mark group relative flex shrink-0 items-center justify-center select-none cursor-pointer ${className}`}
       style={{ width: size, height: size }}
     >
       {/* 动态全息呼吸光晕底衬 */}
