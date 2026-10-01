@@ -27,23 +27,29 @@
 配置在 `.env` 或 ECS `.env.production` 中，现有 Compose 的 `env_file` 会传入容器：
 
 ```dotenv
-LT_AI_BASE_URL=https://your-provider.example/v1
-LT_AI_MODEL=your-model-name
+LT_AI_BASE_URL=https://api.deepseek.com
+LT_AI_MODEL=deepseek-flash
 LT_AI_API_KEY=your-server-only-key
 LT_GITHUB_TOKEN=your-server-only-github-token
 ```
 
-AI 地址须支持 Chat Completions 和 `response_format: { type: "json_object" }`。非本机地址使用 HTTPS。没有配置时学习助手返回明确的未配置状态。不要把密钥放入任何 `VITE_*` 变量或提交 `.env`。
+AI 地址须支持 Chat Completions 和 `response_format: { type: "json_object" }`。默认接入 DeepSeek：省略地址时使用 `https://api.deepseek.com`，该地址下省略模型时使用 `deepseek-flash`，请求关闭 thinking 以保持交互时延可控。默认值依据 [DeepSeek 官方接口示例](https://api-docs.deepseek.com/) 与 [JSON 输出文档](https://api-docs.deepseek.com/guides/json_mode) 核对，可通过环境变量更换模型与兼容服务。非本机地址使用 HTTPS。没有密钥时返回明确的未配置状态。不要把密钥放入任何 `VITE_*` 变量或提交 `.env`。
+
+设置页新增“DeepSeek / 学习助手”配置说明与“读取服务器 AI 配置”。该按钮读取已认证服务器的配置状态、提供方和模型，不返回密钥，也不调用付费模型。需先配置现有服务器地址并登录。真正接入仍需在服务器填入有效 Key，并完成一次真实提问；本轮没有配置用户 Key 或部署 ECS。
 
 所有接口都需要现有登录会话：
 
 | 接口 | 行为 |
 | --- | --- |
-| `GET /api/v1/agent/capabilities` | 已配置状态、协议版本、支持任务 |
-| `POST /api/v1/agent/run` | `review` 复盘或 `plan` 起草安排，返回文本与任务建议 |
+| `GET /api/v1/agent/capabilities` | 已配置状态、协议版本 2、提供方、模型和支持任务，不返回密钥 |
+| `POST /api/v1/agent/run` | `review` 复盘、`plan` 起草安排、`guide` 学习指导，返回文本与任务建议 |
 | `GET /api/v1/integrations/contributions?provider=github&username=...&year=2026` | 平台按日活动数据 |
 
-Agent 只接受汇总：日期范围、时长、作答数、正确数、未完成任务数和薄弱知识点，以及用户本次要求。前端列出汇总并要求勾选后发送。服务返回的任务需再次确认才写入本地待办，重复确认通过稳定 ID 去重。模型不运行代码或工具。未来可在 `apps/api/src/app/extensions.ts` 的 `AGENT_TASKS` 中增加任务，并在 contracts 中增加对应协议。
+左侧“学习助手”进入独立工作区，计划页仍保留快捷提问。支持今天、近 7 天、近 30 天范围；汇总包含时长、作答数、正确数、未完成任务数和薄弱知识点。薄弱点按资料与知识点分别计算，覆盖数学、力扣和自定义内容；至少三次作答且正确率低于 60% 才列入，最多 20 项。
+
+请求接受当前要求、可见学习汇总，以及用户主动勾选的最多 3 篇总结（每篇最多 6,000 字符）。原始学习备注不会自动发送。前端可展开查看所选内容，修改问题、范围或附件后重新确认发送。服务返回任务需再次确认才写入待办，重复确认通过稳定 ID 去重。模型不运行代码或工具。未来可在 `apps/api/src/app/extensions.ts` 的 `AGENT_TASKS` 中增加任务，并在 contracts 中增加对应协议。
+
+学习总结库可手写／粘贴总结、保存 AI 回答、导出 Markdown、删除与勾选带入后续提问。记录保存在 IndexedDB 的 `settings` 表、按 `agentNote:<UUID>` 独立存放；同一 AI 回答用 runId 去重。不升级数据库版本、不覆盖旧学习记录；总结进入现有完整 JSON 备份并可恢复，当前不会进入同步队列，UI 明确标注只在当前浏览器留存。未点“保存到总结库”的回答在离开页面后不会保留。先更新服务器以识别 guide 与 notes，再使用新功能。
 
 GitHub 使用官方 GraphQL `contributionsCollection`，Token 配置在服务器并具有访问该接口的权限。力扣中国使用 `/graphql/noj-go/` 的 `userCalendar(userSlug, year)`；国际站使用 `/graphql/` 的 `matchedUser.userCalendar`，平台可能限制请求。服务不会要求用户提供力扣 Cookie。结果缓存 15 分钟；最近一次读取的日历可在当前浏览器离线查看，并显示原读取时间。中国站返回空日历时不能据此判断账号是否存在。
 
@@ -67,3 +73,5 @@ npm test
 构建先生成共享 contracts / domain 产物。接口测试使用模拟外部响应；真实 AI 和平台账号连接需在配置后的服务器上验收。
 
 可在 Vite 开发服务运行时执行 `node scripts/verify-study-ui.cjs` 与 `node scripts/verify-review-flows.cjs`。可选环境变量：`LT_PLAYWRIGHT_MODULE` 指向 Playwright 模块，`LT_BROWSER_PATH` 指向浏览器，`LT_PREVIEW_ORIGIN` 默认 `http://127.0.0.1:5183`。浏览器脚本使用独立临时数据库，不写入日常浏览器数据。第二个脚本覆盖草稿恢复、跨资料到期清单、重做刷新和双标签页结束计时。
+
+`node scripts/verify-assistant-ui.cjs` 验证总结保存与刷新恢复、只发送已选总结、修改范围重置确认、指导回答留存再引用、配置状态、组合导航控件和持续图标动画。AI 响应与配置状态在浏览器检查中使用模拟数据，不代表真实账户已接通。单元测试覆盖 DeepSeek 适配、附带材料约束、总结完整备份恢复和编程／自定义薄弱点。

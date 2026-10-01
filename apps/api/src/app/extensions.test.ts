@@ -1,11 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentRunRequest, ContributionRequest } from '@learntrack/contracts';
-import { getContributions, runAgent } from './extensions.js';
+import { agentCapabilities, getContributions, runAgent } from './extensions.js';
 const envKeys = ['LT_AI_API_KEY', 'LT_AI_BASE_URL', 'LT_AI_MODEL', 'LT_GITHUB_TOKEN'] as const;
 const original = new Map(envKeys.map((key) => [key, process.env[key]]));
 afterEach(() => { vi.unstubAllGlobals(); for (const key of envKeys) { const val = original.get(key); if (val === undefined) delete process.env[key]; else process.env[key] = val; } });
 const context = { from: '2026-09-24', to: '2026-09-30', studyMinutes: 180, attempted: 5, correct: 3, pendingTasks: 2, weakTopics: ['积分'] };
 describe('agent extension', () => {
+  it('uses the DeepSeek preset and forwards only explicit notes for guidance', async () => {
+    process.env.LT_AI_API_KEY = 'private-test-key'; delete process.env.LT_AI_BASE_URL; delete process.env.LT_AI_MODEL;
+    const fetch = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ summary: '先写出边界条件', tasks: [] }) } }] }));
+    vi.stubGlobal('fetch', fetch);
+    const notes = [{ title: '本周总结', content: '动态规划总漏初始状态' }];
+    expect((await runAgent({ task: 'guide', prompt: '给我具体指导', context, notes })).task).toBe('guide');
+    const call = (fetch.mock.calls as unknown as [string, RequestInit][])[0]!;
+    expect(call[0]).toBe('https://api.deepseek.com/chat/completions');
+    const body = JSON.parse(call[1].body as string);
+    expect(body.model).toBe('deepseek-flash'); expect(body.thinking.type).toBe('disabled');
+    expect(JSON.parse(body.messages[1].content).notes).toEqual(notes);
+    expect(agentCapabilities()).toMatchObject({ version: 2, configured: true, provider: 'DeepSeek', model: 'deepseek-flash' });
+    expect(JSON.stringify(agentCapabilities())).not.toContain('private-test-key');
+    expect(AgentRunRequest.safeParse({ task: 'guide', prompt: 'x', context, notes: Array(4).fill(notes[0]) }).success).toBe(false);
+  });
   it('returns a useful disabled state without exposing credentials', async () => { delete process.env.LT_AI_API_KEY; await expect(runAgent({ task: 'review', prompt: '复盘', context })).rejects.toThrow('尚未配置'); });
   it('calls the configured provider with an aggregate context and validates structured proposals', async () => {
     process.env.LT_AI_API_KEY = 'test-secret'; process.env.LT_AI_BASE_URL = 'https://model.example/v1'; process.env.LT_AI_MODEL = 'test-model';

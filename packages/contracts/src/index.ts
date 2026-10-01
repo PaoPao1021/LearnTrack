@@ -161,9 +161,10 @@ export const CourseProgressDto = Versioned.extend({
   title: z.string().trim().min(1).max(200), done: z.boolean(), minutes: z.number().int().min(0).max(100000), note: z.string().max(2000),
 });
 
-export const AgentTask = z.enum(['review', 'plan']);
+export const AgentTask = z.enum(['review', 'plan', 'guide']);
 export const AgentRunRequest = z.object({
   task: AgentTask, prompt: z.string().trim().min(1).max(4000),
+  notes: z.array(z.object({ title: z.string().trim().min(1).max(120), content: z.string().trim().min(1).max(6000) })).max(3).optional(),
   context: z.object({
     from: DateKey, to: DateKey, studyMinutes: z.number().int().min(0).max(1000000),
     attempted: z.number().int().min(0).max(1000000), correct: z.number().int().min(0).max(1000000),

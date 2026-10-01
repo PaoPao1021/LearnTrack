@@ -25,7 +25,7 @@ export function BrandLogoMark({ size = 42, className = '' }: BrandLogoMarkProps)
 
       {/* 晶体镜面圆角外壳 (Squircle Shell) */}
       <div
-        className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[14px] border border-white/30 shadow-md backdrop-blur-md transition-transform duration-300 group-hover:scale-105 active:scale-95"
+        className="brand-shell relative flex h-full w-full items-center justify-center overflow-hidden rounded-[14px] border border-white/30 shadow-md backdrop-blur-md transition-transform duration-300 group-hover:scale-105 active:scale-95"
         style={{
           background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 90%, #6366f1) 0%, #4338ca 100%)',
           boxShadow: 'inset 0 1px 1.5px rgba(255, 255, 255, 0.55), 0 4px 16px -2px color-mix(in srgb, var(--accent) 50%, transparent)',

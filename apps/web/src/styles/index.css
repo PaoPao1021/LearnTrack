@@ -262,6 +262,21 @@ summary:focus-visible,
 .app-sidebar { height: 100dvh; overflow-y: auto; z-index: 40; }
 .sidebar-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
 .sidebar-tools { display: flex; gap: 8px; }
+.workspace-toolbar { padding: 12px 32px 0; max-width: 1160px; margin-inline: auto; }
+.navigation-control { display: inline-flex; align-items: center; padding: 5px 8px; gap: 6px; border: 1px solid var(--border-glass); border-radius: 18px; background: var(--glass-sheen), var(--glass-regular); backdrop-filter: blur(20px); box-shadow: inset 0 1px 0 var(--edge-inner); }
+.navigation-control button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 32px; padding: 4px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; transition: background 160ms ease; }
+.navigation-control button:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.navigation-control button:first-child svg { color: var(--accent); }
+.navigation-control .theme-control { color: var(--text-secondary); }
+.dark .navigation-control .theme-control { color: #facc60; }
+.navigation-divider { width: 1px; height: 16px; background: var(--border-soft); }
+.agent-context { padding: 16px; background: color-mix(in srgb, var(--accent) 5%, transparent); border: 1px solid var(--border-soft); border-radius: 12px; }
+.agent-note-choices { max-height: 210px; overflow-y: auto; display: grid; gap: 8px; }
+.agent-note-choice { display: flex; align-items: start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 10px; font-size: 13px; }
+.agent-note-choice input { margin-top: 3px; }
+.agent-note-choice:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.agent-answer, .agent-context, .agent-note-choice { overflow-wrap: anywhere; }
+.agent-config { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-content); border: 1px solid var(--border-soft); border-radius: 10px; padding: 16px; font-size: 12px; }
 .app-sidebar.collapsed { width: 72px; padding: 20px 12px; }
 .collapsed .sidebar-heading, .collapsed .sidebar-tools { flex-direction: column; gap: 12px; }
 .collapsed .sidebar-label { display: none; }
@@ -325,6 +340,7 @@ progress { accent-color: var(--accent-strong); }
   .app-sidebar { position: fixed; left: 0; top: 0; }
   .workspace-frame { margin-left: 72px; }
   .workspace-main { padding: 24px 12px 40px; }
+  .workspace-toolbar { padding-inline: 12px; }
   .work-section { padding: 18px 16px; }.page-heading h1 { font-size: 24px; }.study-metrics { grid-template-columns: repeat(2, 1fr); gap: 18px; }
   .section-heading .date-control { width: 138px; }
 }
@@ -352,8 +368,8 @@ progress { accent-color: var(--accent-strong); }
   100% { transform: rotate(360deg); }
 }
 @keyframes aura-breathe {
-  0%, 100% { opacity: 0.55; transform: scale(0.96); filter: blur(8px); }
-  50% { opacity: 0.9; transform: scale(1.12); filter: blur(14px); }
+  0%, 100% { opacity: 0.45; transform: scale(0.96); }
+  50% { opacity: 0.75; transform: scale(1.12); }
 }
 @keyframes gem-pulse {
   0%, 100% { transform: scale(1); opacity: 0.85; }
@@ -961,11 +977,13 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
   .rail-link:hover svg { transform: translateX(2px); }
   .work-section:hover { border-color: color-mix(in srgb, var(--accent) 20%, var(--border-soft)); }
 }
-.brand-mark .brand-aura { animation: none; opacity: .35; }
-.brand-mark :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: paused; }
+.brand-mark .brand-aura { animation: aura-breathe 6s ease-in-out infinite; }
+.brand-mark :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: running; }
+.brand-shell::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(135deg, rgba(255,255,255,.32), transparent 42%, rgba(125,211,252,.14)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
 .brand-name:hover .brand-aura, .brand-name:focus-visible .brand-aura { opacity: .7; }
 .brand-name:hover :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem), .brand-name:focus-visible :is(.chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: running; }
 [data-motion-paused='true']::after, [data-motion-paused='true'] :is(.animate-spin, .chrono-gear, .chrono-track, .chrono-hour, .chrono-sweep, .chrono-gem) { animation-play-state: paused !important; }
+.brand-mark[data-motion-paused='true'] .brand-aura { animation-play-state: paused; }
 .input { min-height: 44px; border-radius: 8px; }
 .modal-panel { max-height: 90dvh; overflow-y: auto; }
 .work-section, .workspace-main, .task-row > div { min-width: 0; }
@@ -985,10 +1003,10 @@ progress::-moz-progress-bar { background: var(--accent-strong); }
 
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .card, .work-section, .app-sidebar { background: var(--glass-regular-solid); }
+  .card, .work-section, .app-sidebar, .navigation-control { background: var(--glass-regular-solid); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .card, .work-section, .app-sidebar { background: var(--glass-regular-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .card, .work-section, .app-sidebar, .navigation-control { background: var(--glass-regular-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .ambient-light { background: var(--bg-base); }
   .ambient-light::before, .ambient-light::after { display: none; }
 }

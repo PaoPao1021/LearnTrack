@@ -10,6 +10,7 @@ const Learning = lazy(() => import('../features/learning-paths/Learning'));
 const Settings = lazy(() => import('../features/settings/Settings'));
 const Plans = lazy(() => import('../features/plans/Plans'));
 const Practice = lazy(() => import('../features/practice/Practice'));
+const Assistant = lazy(() => import('../features/plans/Assistant'));
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/practice" element={<Practice />} />
+          <Route path="/assistant" element={<Assistant />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

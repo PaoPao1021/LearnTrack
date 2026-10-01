@@ -1,6 +1,6 @@
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
 import { Suspense, useEffect, useState } from 'react';
-import { LayoutDashboard, ScrollText, ChartSpline, Compass, Settings2, Timer, CalendarDays, BookOpenCheck, Sun, Moon, Keyboard, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, ScrollText, ChartSpline, Compass, Settings2, Timer, CalendarDays, BookOpenCheck, Sun, Moon, Keyboard, PanelLeftClose, PanelLeftOpen, BotMessageSquare } from 'lucide-react';
 import { ensureSeeded, ensureDeviceId } from '../../db/seed';
 import { useThemeBootstrap, useTheme } from '../../features/settings/useTheme';
 import { useI18n } from '../../i18n';
@@ -17,6 +17,7 @@ const NAV = [
   { to: '/practice', key: 'nav.practice', icon: BookOpenCheck },
   { to: '/analytics', key: 'nav.analytics', icon: ChartSpline },
   { to: '/learning', key: 'nav.learning', icon: Compass },
+  { to: '/assistant', key: 'nav.assistant', icon: BotMessageSquare },
 ] as const;
 let initialization: Promise<void> | null = null;
 function initialize() {
@@ -58,11 +59,12 @@ export default function Layout() {
     <a className="skip-link" href="#main-content">跳转到内容</a>
     {narrow && !collapsed && <button className="sidebar-scrim" aria-label="关闭展开的导航" onClick={toggleSidebar} tabIndex={-1}/>}
     <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`} onClick={(event) => { if (narrow && event.target instanceof Element && event.target.closest('a')) setCollapsed(true); }}>
-      <div className="sidebar-heading"><Link to="/" className="brand-name" aria-label="LearnTrack"><BrandLogoMark size={28}/><span className="sidebar-label">LearnTrack</span></Link><button className="btn-ghost icon-control" aria-label={collapsed ? '展开导航' : '收起导航'} aria-expanded={!collapsed} onClick={toggleSidebar}>{collapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button></div>
+      <div className="sidebar-heading"><Link to="/" className="brand-name" aria-label="LearnTrack"><BrandLogoMark size={36}/><span className="sidebar-label">LearnTrack</span></Link>{narrow && !collapsed && <button className="btn-ghost icon-control" aria-label="收起侧栏" onClick={toggleSidebar}><PanelLeftClose size={16}/></button>}</div>
       <nav aria-label={t('a11y.mainNav')} className="space-y-1">{NAV.map((item) => <NavLink key={item.to} end={item.to === '/'} to={item.to} aria-label={t(item.key)} title={collapsed ? t(item.key) : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><item.icon size={18}/><span className="sidebar-label">{t(item.key)}</span></NavLink>)}<NavLink to="/entries" aria-label={t('nav.entries')} title={collapsed ? t('nav.entries') : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><ScrollText size={18}/><span className="sidebar-label">{t('nav.entries')}</span></NavLink></nav>
-      <div className="mt-auto pt-6 border-t border-[var(--border-soft)] space-y-3"><NavLink to="/settings" aria-label={t('nav.settings')} title={collapsed ? t('nav.settings') : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><Settings2 size={18}/><span className="sidebar-label">{t('nav.settings')}</span></NavLink><div className="sidebar-tools"><button className="btn-ghost icon-control" aria-label={themeLabel} onClick={toggleTheme}>{isDarkEffective ? <Sun size={17}/> : <Moon size={17}/>}</button><button className="btn-ghost" aria-label={lang === 'zh' ? 'Switch to English' : '切换中文'} onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}>{collapsed ? (lang === 'zh' ? 'EN' : '中') : (lang === 'zh' ? '中 / EN' : 'EN / 中')}</button><button className="btn-ghost icon-control" aria-label="快捷键" onClick={() => setShortcuts(true)}><Keyboard size={17}/></button></div><p className="text-xs muted sidebar-label">数据保存在当前浏览器</p></div>
+      <div className="mt-auto pt-6 border-t border-[var(--border-soft)] space-y-3"><NavLink to="/settings" aria-label={t('nav.settings')} title={collapsed ? t('nav.settings') : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><Settings2 size={18}/><span className="sidebar-label">{t('nav.settings')}</span></NavLink><div className="sidebar-tools"><button className="btn-ghost" aria-label={lang === 'zh' ? 'Switch to English' : '切换中文'} onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}>{collapsed ? (lang === 'zh' ? 'EN' : '中') : (lang === 'zh' ? '中 / EN' : 'EN / 中')}</button><button className="btn-ghost icon-control" aria-label="快捷键" onClick={() => setShortcuts(true)}><Keyboard size={17}/></button></div><p className="text-xs muted sidebar-label">数据保存在当前浏览器</p></div>
     </aside>
     <div className="workspace-frame min-w-0 flex-1">
+      <div className="workspace-toolbar"><div className="navigation-control"><button aria-label={collapsed ? '展开导航' : '收起导航'} aria-expanded={!collapsed} onClick={toggleSidebar}>{collapsed ? <PanelLeftOpen size={16}/> : <PanelLeftClose size={16}/>}<span>{collapsed ? '展开导航' : '收起导航'}</span></button><span className="navigation-divider"/><button className="theme-control" aria-label={themeLabel} title={themeLabel} onClick={toggleTheme}>{isDarkEffective ? <Sun size={17}/> : <Moon size={17}/>}</button></div></div>
       {timer.status !== 'idle' && <Link to="/" className="active-timer-strip"><Timer size={15}/> {timer.status === 'running' ? '计时中' : '已暂停'} · {formatClock(elapsedSeconds(timer))}<span className="ml-auto">返回计时</span></Link>}
       <main id="main-content" tabIndex={-1} className="workspace-main">
         {initError && <p role="alert" className="form-error mb-4">本地数据库初始化失败，请关闭其他 LearnTrack 标签页后刷新；请先保留浏览器数据。</p>}

@@ -331,7 +331,7 @@ describe('LearnTrack API', () => {
     const cookie = await loginCookie();
     const capabilities = await app.inject({ method: 'GET', url: '/api/v1/agent/capabilities', headers: { cookie } });
     expect(capabilities.statusCode).toBe(200);
-    expect(capabilities.json()).toMatchObject({ version: 1, tasks: ['review', 'plan'], requiresReview: true });
+    expect(capabilities.json()).toMatchObject({ version: 2, tasks: ['review', 'plan', 'guide'], requiresReview: true });
     expect((await app.inject({ method: 'POST', url: '/api/v1/agent/run', headers: { cookie }, payload: { task: 'execute' } })).statusCode).toBe(400);
   });
 

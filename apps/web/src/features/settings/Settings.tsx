@@ -10,6 +10,7 @@ import { exportFullBackup, restoreBackup, inspectBackup, exportCsv, downloadBlob
 import { login, logout, readSyncState, setServerUrl, syncNow, previewSync, healthCheck, getServerUrl, checkSession, type SyncPreview } from '../../services/sync';
 import type { Category } from '@learntrack/domain';
 import { ConflictSection } from './ConflictSection';
+import { AgentConnection } from './AgentConnection';
 import { soundscape } from '../../services/soundscape';
 import { Sun, Moon, Clock, Sparkles, ArrowDownToLine, ArrowUpFromLine, RefreshCw } from 'lucide-react';
 
@@ -590,7 +591,8 @@ export default function Settings() {
       <SfxSection />
       <CategorySection />
       <SyncSection />
-      <section className="work-section"><h2>在线功能</h2><p className="muted text-sm mt-2">学习助手、GitHub 和力扣日历共用上方的服务器地址与登录状态。AI 密钥和 GitHub Token 在服务器环境变量中配置。</p><p className="text-sm mt-3">学习助手在“计划”页使用，活动日历在“练习 → 编程活动”中查看。每次使用助手前会列出即将发送的汇总；生成的任务需要确认后保存。</p><p className="muted text-xs mt-3">服务器配置见仓库 docs/study-workspace.md。离线时可继续使用计划、计时和练习记录。</p></section>
+      <AgentConnection />
+      <section className="work-section"><h2>编程活动</h2><p className="muted text-sm mt-2">GitHub 和力扣日历共用上方的服务器地址与登录状态，在“练习 → 编程活动”中查看。GitHub Token 在服务器配置，离线时仍可使用本地学习功能。</p></section>
       <BackupSection />
       <ServerStatus />
     </div>
