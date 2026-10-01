@@ -29,7 +29,14 @@ export default function Layout() {
   useCardLight();
   const ambientRef = useVisibleMotion<HTMLDivElement>();
   const { isDarkEffective, toggleTheme } = useTheme();
-  const [shortcuts, setShortcuts] = useState(false), [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('learntrack_sidebar_collapsed') === 'true'; } catch { return false; } });
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const [shortcuts, setShortcuts] = useState(false), [collapsed, setCollapsed] = useState(() => { try { return window.matchMedia('(max-width: 767px)').matches || localStorage.getItem('learntrack_sidebar_collapsed') === 'true'; } catch { return false; } });
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const resize = () => { setNarrow(media.matches); setCollapsed(media.matches); };
+    media.addEventListener('change', resize);
+    return () => media.removeEventListener('change', resize);
+  }, []);
   const [initError, setInitError] = useState(false);
   const timer = useTimer();
   const toggleSidebar = () => setCollapsed((previous) => { const next = !previous; try { localStorage.setItem('learntrack_sidebar_collapsed', String(next)); } catch { /* optional preference */ } return next; });
@@ -49,20 +56,19 @@ export default function Layout() {
   return <div className="app-shell">
     <div className="ambient-light" ref={ambientRef} aria-hidden="true"/>
     <a className="skip-link" href="#main-content">跳转到内容</a>
-    <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`}>
-      <div className="flex items-center justify-between mb-8"><Link to="/" className="brand-name"><BrandLogoMark size={28}/>LearnTrack</Link><button className="btn-ghost icon-control" aria-label="收起导航" onClick={toggleSidebar}><PanelLeftClose size={17}/></button></div>
-      <nav aria-label={t('a11y.mainNav')} className="space-y-1">{NAV.map((item) => <NavLink key={item.to} end={item.to === '/'} to={item.to} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><item.icon size={18}/><span>{t(item.key)}</span></NavLink>)}<NavLink to="/entries" className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><ScrollText size={18}/>{t('nav.entries')}</NavLink></nav>
-      <div className="mt-auto pt-6 border-t border-[var(--border-soft)] space-y-3"><NavLink to="/settings" className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><Settings2 size={18}/>{t('nav.settings')}</NavLink><div className="flex gap-2"><button className="btn-ghost icon-control" aria-label={themeLabel} onClick={toggleTheme}>{isDarkEffective ? <Sun size={17}/> : <Moon size={17}/>}</button><button className="btn-ghost" aria-label={lang === 'zh' ? 'Switch to English' : '切换中文'} onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}>{lang === 'zh' ? '中 / EN' : 'EN / 中'}</button><button className="btn-ghost icon-control" aria-label="快捷键" onClick={() => setShortcuts(true)}><Keyboard size={17}/></button></div><p className="text-xs muted">数据保存在当前浏览器</p></div>
+    {narrow && !collapsed && <button className="sidebar-scrim" aria-label="关闭展开的导航" onClick={toggleSidebar} tabIndex={-1}/>}
+    <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`} onClick={(event) => { if (narrow && event.target instanceof Element && event.target.closest('a')) setCollapsed(true); }}>
+      <div className="sidebar-heading"><Link to="/" className="brand-name" aria-label="LearnTrack"><BrandLogoMark size={28}/><span className="sidebar-label">LearnTrack</span></Link><button className="btn-ghost icon-control" aria-label={collapsed ? '展开导航' : '收起导航'} aria-expanded={!collapsed} onClick={toggleSidebar}>{collapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button></div>
+      <nav aria-label={t('a11y.mainNav')} className="space-y-1">{NAV.map((item) => <NavLink key={item.to} end={item.to === '/'} to={item.to} aria-label={t(item.key)} title={collapsed ? t(item.key) : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><item.icon size={18}/><span className="sidebar-label">{t(item.key)}</span></NavLink>)}<NavLink to="/entries" aria-label={t('nav.entries')} title={collapsed ? t('nav.entries') : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><ScrollText size={18}/><span className="sidebar-label">{t('nav.entries')}</span></NavLink></nav>
+      <div className="mt-auto pt-6 border-t border-[var(--border-soft)] space-y-3"><NavLink to="/settings" aria-label={t('nav.settings')} title={collapsed ? t('nav.settings') : undefined} className={({ isActive }) => `rail-link ${isActive ? 'active' : ''}`}><Settings2 size={18}/><span className="sidebar-label">{t('nav.settings')}</span></NavLink><div className="sidebar-tools"><button className="btn-ghost icon-control" aria-label={themeLabel} onClick={toggleTheme}>{isDarkEffective ? <Sun size={17}/> : <Moon size={17}/>}</button><button className="btn-ghost" aria-label={lang === 'zh' ? 'Switch to English' : '切换中文'} onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}>{collapsed ? (lang === 'zh' ? 'EN' : '中') : (lang === 'zh' ? '中 / EN' : 'EN / 中')}</button><button className="btn-ghost icon-control" aria-label="快捷键" onClick={() => setShortcuts(true)}><Keyboard size={17}/></button></div><p className="text-xs muted sidebar-label">数据保存在当前浏览器</p></div>
     </aside>
-    {collapsed && <button className="desktop-expand btn-ghost icon-control" onClick={toggleSidebar} aria-label="展开导航"><PanelLeftOpen size={18}/></button>}
-    <div className="min-w-0 flex-1"><header className="app-mobile-header"><Link to="/" className="brand-name"><BrandLogoMark size={28}/>LearnTrack</Link><div className="flex items-center gap-1"><Link className="btn-ghost icon-control" to="/entries" aria-label="学习记录"><ScrollText size={17}/></Link><button className="btn-ghost icon-control" onClick={toggleTheme} aria-label={themeLabel}>{isDarkEffective ? <Sun size={17}/> : <Moon size={17}/>}</button><Link className="btn-ghost icon-control" to="/settings" aria-label={t('nav.settings')}><Settings2 size={17}/></Link></div></header>
+    <div className="workspace-frame min-w-0 flex-1">
       {timer.status !== 'idle' && <Link to="/" className="active-timer-strip"><Timer size={15}/> {timer.status === 'running' ? '计时中' : '已暂停'} · {formatClock(elapsedSeconds(timer))}<span className="ml-auto">返回计时</span></Link>}
       <main id="main-content" tabIndex={-1} className="workspace-main">
         {initError && <p role="alert" className="form-error mb-4">本地数据库初始化失败，请关闭其他 LearnTrack 标签页后刷新；请先保留浏览器数据。</p>}
         <Suspense fallback={<p role="status" className="muted py-6">{t('common.loading')}</p>}><Outlet/></Suspense>
       </main>
     </div>
-    <nav className="app-bottom-nav" aria-label={t('a11y.bottomNav')}>{NAV.map((item) => <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><item.icon size={19}/><span>{t(item.key)}</span></NavLink>)}</nav>
     <ToastContainer/><KeyboardShortcutsModal open={shortcuts} onClose={() => setShortcuts(false)}/>
   </div>;
 }
