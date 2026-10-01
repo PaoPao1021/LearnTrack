@@ -56,6 +56,8 @@ export function Modal({
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
+      // Let the native picker consume Escape before dismissing its parent dialog.
+      if (e.target instanceof Element && e.target.closest('select:open')) return;
       onClose();
       return;
     }

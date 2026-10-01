@@ -631,7 +631,87 @@ progress { accent-color: var(--accent-strong); }
 }
 
 input[type='text'], input[type='number'], input[type='date'], input[type='time'], select, textarea {
-  color-scheme: light dark;
+  color-scheme: inherit;
+}
+
+/* Native customizable selects keep labels, form events and keyboard/typeahead behavior.
+   The picker is in the browser's top layer, above glass cards and modal clipping. */
+@supports (appearance: base-select) {
+  select.input, select.input::picker(select) { appearance: base-select; }
+  select.input {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    text-align: start;
+    background: var(--glass-sheen), color-mix(in srgb, var(--surface-elevated) 84%, transparent);
+  }
+  select.input::picker-icon {
+    color: var(--text-secondary);
+    margin-inline-start: auto;
+    transition: rotate 180ms var(--ease-out);
+  }
+  select.input:open::picker-icon { rotate: 180deg; }
+  select.input:open { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+  select.input::picker(select) {
+    color-scheme: inherit;
+    color: var(--ink);
+    font: 400 14px / 1.5 var(--font-ui);
+    background: var(--glass-sheen-spec), var(--glass-sheen), var(--glass-emphasis);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border: 1px solid var(--border-glass);
+    border-radius: 14px;
+    padding: 6px;
+    margin-block: 6px;
+    min-inline-size: anchor-size(self-inline);
+    max-inline-size: calc(100vw - 24px);
+    max-block-size: min(360px, 50dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: inset 0 1px 0 var(--edge-highlight), inset 0 -1px 0 var(--edge-bottom), var(--shadow-overlay);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 160ms ease, transform 160ms var(--ease-out), display 160ms allow-discrete, overlay 160ms allow-discrete;
+  }
+  select.input:open::picker(select) { opacity: 1; transform: translateY(0); }
+  @starting-style { select.input:open::picker(select) { opacity: 0; transform: translateY(-4px); } }
+  select.input option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-block-size: 40px;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--ink);
+    background: transparent;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  select.input option:checked { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
+  select.input option:hover, select.input option:focus-visible {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+    outline: none;
+  }
+  select.input option::checkmark { order: 1; margin-inline-start: auto; color: var(--accent-strong); }
+  .dark select.input option::checkmark { color: #8ac4ff; }
+  select.input optgroup { padding-block: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+  select.input optgroup + optgroup { border-top: 1px solid var(--border-soft); margin-top: 4px; }
+  select.input optgroup option { font-size: 14px; font-weight: 400; }
+  select.input:disabled, select.input option:disabled { opacity: .5; cursor: not-allowed; }
+  @media (prefers-reduced-motion: reduce) {
+    select.input::picker-icon, select.input::picker(select) { transition: none; transform: none; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    select.input { background: var(--surface-elevated); }
+    select.input::picker(select) { background: var(--glass-emphasis-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    select.input::picker(select) { background: var(--glass-emphasis-solid); }
+  }
 }
 
 /* ---------- 分段控件：连续轨道 + 移动底座 ---------- */
