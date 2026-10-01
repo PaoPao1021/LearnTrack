@@ -33,9 +33,9 @@
   --bg-field-orange: rgba(251, 146, 60, 0.26); /* 橙：底部 */
   --bg-field-blue: rgba(147, 197, 253, 0.34);  /* 雾蓝：中部 */
 
-  /* 内容层：近实色表面，不做模糊（正文/列表/表格/表单） */
-  --surface-content: rgba(255, 255, 255, 0.9);
-  --surface-content-hover: rgba(255, 255, 255, 0.97);
+  /* 内容玻璃保留环境透射，输入与浮层使用独立的高密度表面。 */
+  --surface-content: rgba(255, 255, 255, 0.58);
+  --surface-content-hover: rgba(255, 255, 255, 0.66);
   --surface-elevated: #ffffff;
 
   /* 控制层：常规玻璃（侧栏 / 工具栏 / 底部导航 / 分段轨道） */
@@ -125,8 +125,8 @@
   --bg-field-orange: rgba(251, 146, 60, 0.10); /* 微弱暖光：底部 */
   --bg-field-blue: rgba(34, 211, 238, 0.14);   /* 青：中部 */
 
-  --surface-content: rgba(26, 31, 42, 0.92);
-  --surface-content-hover: rgba(32, 38, 51, 0.96);
+  --surface-content: rgba(26, 31, 42, 0.62);
+  --surface-content-hover: rgba(32, 38, 51, 0.70);
   --surface-elevated: #202633;
 
   /* 控制层玻璃带轻微环境色相（靛/紫），深色下玻璃"染"上背景 */
@@ -175,14 +175,7 @@ body {
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
-  /* 背景层：左上主光 + 不对称彩色光域，供玻璃透射采样；冷暖呼应 */
-  background:
-    radial-gradient(56% 46% at 12% 8%, var(--bg-field-light), transparent 68%),
-    radial-gradient(46% 40% at 90% 14%, var(--bg-field-pink), transparent 70%),
-    radial-gradient(50% 46% at 70% 98%, var(--bg-field-orange), transparent 72%),
-    radial-gradient(38% 34% at 36% 56%, var(--bg-field-blue), transparent 76%),
-    var(--bg-linear);
-  background-attachment: fixed;
+  background: var(--bg-base);
 }
 
 /* 极轻颗粒：置于内容层之下（z-0，内容 z-1、玻璃 z-10），只在背景与玻璃处可感知，
@@ -247,14 +240,25 @@ summary:focus-visible,
   --font-num: var(--font-ui);
   --font-mono: ui-monospace, Consolas, monospace;
   --text-tertiary: #647084;
-  --radius-card: 12px;
-  --surface-content: #fff;
-  --surface-content-hover: #fff;
-  --border-soft: #dfe4eb;
+  --radius-card: 18px;
 }
-.dark { --text-tertiary: #a0adbf; --surface-content: #181e27; --surface-content-hover: #181e27; --border-soft: #34404f; }
-.app-shell { display: flex; min-height: 100vh; background: var(--bg-base); color: var(--ink); }
-.app-sidebar { width: 218px; height: 100vh; position: sticky; top: 0; padding: 24px 16px; display: flex; flex-direction: column; background: var(--surface-content); border-right: 1px solid var(--border-soft); flex-shrink: 0; }
+.dark { --text-tertiary: #a0adbf; }
+.app-shell { position: relative; isolation: isolate; display: flex; min-height: 100vh; color: var(--ink); }
+/* One fixed light field sits behind all pages, so glass has visible color to transmit.
+   Only transform is animated; blur belongs to stationary surfaces, not moving layers. */
+.ambient-light { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg-linear); }
+.ambient-light::before, .ambient-light::after { content: ''; position: absolute; inset: -12%; }
+.ambient-light::before {
+  background: radial-gradient(ellipse at 14% 16%, var(--bg-field-light), transparent 52%), radial-gradient(ellipse at 88% 22%, var(--bg-field-pink), transparent 52%), radial-gradient(ellipse at 65% 94%, var(--bg-field-orange), transparent 50%);
+  animation: ambient-drift 32s ease-in-out infinite alternate;
+}
+.ambient-light::after {
+  background: radial-gradient(ellipse at 42% 58%, var(--bg-field-blue), transparent 56%);
+  animation: ambient-drift 26s ease-in-out -12s infinite alternate-reverse;
+}
+@keyframes ambient-drift { from { transform: translate3d(-2%, -1%, 0) scale(1); } to { transform: translate3d(3%, 2%, 0) scale(1.08); } }
+.ambient-light[data-motion-paused='true']::before, .ambient-light[data-motion-paused='true']::after { animation-play-state: paused; }
+.app-sidebar { width: 218px; height: 100vh; position: sticky; top: 0; padding: 24px 16px; display: flex; flex-direction: column; background: var(--glass-sheen-spec), var(--glass-sheen), var(--glass-regular); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); border-right: 1px solid var(--border-glass); box-shadow: inset -1px 0 0 var(--edge-inner), 8px 0 32px -24px rgba(18, 26, 44, .2); flex-shrink: 0; }
 .app-sidebar.collapsed { display: none; }
 .brand-name { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; letter-spacing: -.025em; }
 .rail-link { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); font-size: 14px; }
@@ -267,7 +271,7 @@ summary:focus-visible,
 .page-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
 .page-heading h1 { font-size: 26px; font-weight: 700; letter-spacing: -.025em; line-height: 1.3; }
 .page-heading p { margin-top: 8px; font-size: 14px; color: var(--text-secondary); line-height: 1.65; }
-.work-section { position: relative; isolation: isolate; background: var(--surface-content); border: 1px solid var(--border-soft); border-radius: 12px; padding: 24px; }
+.work-section { position: relative; isolation: isolate; background: var(--glass-sheen-spec), var(--glass-sheen), var(--surface-content); border: 1px solid var(--border-glass); border-radius: var(--radius-card); padding: 24px; }
 .work-section h2, .section-heading h2 { font-size: 18px; font-weight: 650; line-height: 1.5; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .muted { color: var(--text-secondary); }
@@ -842,8 +846,15 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
   color: var(--text-tertiary);
 }
 
-/* Working surfaces keep their depth and feedback without obscuring the data. */
-.card, .work-section { box-shadow: inset 0 1px 0 var(--edge-inner), var(--shadow-near); border-radius: 12px; }
+/* Liquid glass: bright upper rim, shaded lower rim, and a broad floating shadow. */
+.card, .work-section {
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  border-color: var(--border-glass);
+  box-shadow: inset 0 1px 0 var(--edge-highlight), inset 1px 0 0 var(--edge-highlight-soft), inset 0 -1px 0 var(--edge-bottom), var(--shadow-float);
+  border-radius: var(--radius-card);
+}
+.card .card, .work-section .work-section { backdrop-filter: none; -webkit-backdrop-filter: none; }
 .work-section { transition: border-color var(--dur-state) ease, box-shadow var(--dur-state) ease; }
 .text-gradient-accent { background: none; -webkit-text-fill-color: currentColor; color: var(--accent-strong); }
 .btn-primary, .btn-ghost { min-height: 44px; border-radius: 8px; }
@@ -852,6 +863,8 @@ input[type='text'], input[type='number'], input[type='date'], input[type='time']
 .rail-link, .app-bottom-nav a, .work-tabs button, .task-check { transition: color var(--dur-micro) ease, background-color var(--dur-micro) ease, border-color var(--dur-micro) ease, transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-state) ease; }
 .rail-link svg, .app-bottom-nav a svg { transition: transform var(--dur-state) var(--ease-out); }
 .rail-link.active { box-shadow: inset 0 1px 0 var(--edge-inner), 0 3px 12px -6px color-mix(in srgb, var(--accent) 25%, transparent); }
+/* Filled actions keep their blue; text over the dark light field needs a lighter blue. */
+.dark :is(.rail-link.active, .work-tabs button[aria-current], .work-tabs button.selected, .work-section a, .app-bottom-nav a.active, .active-timer-strip) { color: #8ac4ff; }
 .work-tabs button:hover, .task-check:hover { background-color: color-mix(in srgb, var(--accent) 7%, transparent); }
 .task-check.is-done:hover { background-color: var(--accent-strong); }
 .task-check:active:not(:disabled) { transform: scale(.93); }
@@ -884,12 +897,18 @@ progress::-moz-progress-bar { background: var(--accent-strong); }
 @media (min-width: 640px) { .contribution-filters { grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) 100px auto; }.contribution-filters > .field:nth-child(-n+2) { grid-column: auto; } }
 
 @media (max-width: 767px) {
-  .app-bottom-nav { background: color-mix(in srgb, var(--surface-content) 92%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .app-bottom-nav, .app-mobile-header { background: var(--glass-regular); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .work-section, .app-sidebar, .app-bottom-nav, .app-mobile-header { background: var(--glass-regular-solid); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .app-bottom-nav { background: var(--surface-content); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .card, .work-section, .app-sidebar, .app-bottom-nav, .app-mobile-header { background: var(--glass-regular-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .ambient-light { background: var(--bg-base); }
+  .ambient-light::before, .ambient-light::after { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .ambient-light::before, .ambient-light::after { animation: none; }
   .card-hero.is-running::after { animation: none; opacity: .6; }
   .task-check.is-done svg, .chrono-ring .animate-spin, .brand-mark * { animation: none !important; }
   .rail-link:hover svg, .app-bottom-nav a.active svg, .task-check:active, .btn-primary:hover, .btn-ghost:hover, .btn-primary:active:not(:disabled), .btn-ghost:active:not(:disabled), .brand-mark > div { transform: none; }

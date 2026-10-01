@@ -9,7 +9,7 @@ import { formatClock } from '../../utils';
 import { ToastContainer } from '../common/Toast';
 import { KeyboardShortcutsModal } from '../common/KeyboardShortcutsModal';
 import { BrandLogoMark } from '../common/BrandLogoMark';
-import { useCardLight } from '../common/useSurfaceMotion';
+import { useCardLight, useVisibleMotion } from '../common/useSurfaceMotion';
 
 const NAV = [
   { to: '/', key: 'nav.overview', icon: LayoutDashboard },
@@ -27,6 +27,7 @@ export default function Layout() {
   const navigate = useNavigate(), { t, lang, setLang } = useI18n();
   useThemeBootstrap();
   useCardLight();
+  const ambientRef = useVisibleMotion<HTMLDivElement>();
   const { isDarkEffective, toggleTheme } = useTheme();
   const [shortcuts, setShortcuts] = useState(false), [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('learntrack_sidebar_collapsed') === 'true'; } catch { return false; } });
   const [initError, setInitError] = useState(false);
@@ -46,6 +47,7 @@ export default function Layout() {
   }, [navigate]);
   const themeLabel = isDarkEffective ? '切换浅色' : '切换深色';
   return <div className="app-shell">
+    <div className="ambient-light" ref={ambientRef} aria-hidden="true"/>
     <a className="skip-link" href="#main-content">跳转到内容</a>
     <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="flex items-center justify-between mb-8"><Link to="/" className="brand-name"><BrandLogoMark size={28}/>LearnTrack</Link><button className="btn-ghost icon-control" aria-label="收起导航" onClick={toggleSidebar}><PanelLeftClose size={17}/></button></div>
