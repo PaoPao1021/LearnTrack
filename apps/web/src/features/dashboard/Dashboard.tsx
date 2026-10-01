@@ -22,7 +22,7 @@ import { InteractiveDurationCards } from './InteractiveDurationCards';
 import { soundscape } from '../../services/soundscape';
 import { showToast } from '../../components/common/Toast';
 import { Link } from 'react-router-dom';
-import { practiceStats } from '@learntrack/domain';
+import { practiceStats, reviewQueue } from '@learntrack/domain';
 import { useVisibleMotion } from '../../components/common/useSurfaceMotion';
 
 const TIMER_PRESETS = [
@@ -342,8 +342,8 @@ function StudySummary({ date }: { date: string }) {
   const attempts = useLiveQuery(() => db.practiceAttempts.filter((r) => !r.deletedAt).toArray(), [], []);
   const plans = useLiveQuery(() => db.studyPlans.filter((p) => !p.deletedAt && p.status === 'active' && p.startDate <= date && p.endDate >= date).toArray(), [date], []);
   const stats = practiceStats(attempts.filter((r) => r.learningDate === date));
-  const due = practiceStats(attempts).review.filter((r) => r.reviewDate && r.reviewDate <= date);
-  return <section className="work-section"><div className="section-heading"><h2>练习与计划</h2><Link className="text-sm" to="/practice">记录练习</Link></div><div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 text-sm"><span>练习 {stats.uniqueQuestions} 道题</span><span>正确 {stats.correct} / {stats.answered} 次作答</span><Link to="/practice">待复习 {due.length} 题</Link></div>{plans.length > 0 && <ul className="mt-4 text-sm space-y-2">{plans.map((p) => <li key={p.id}><Link to="/plans">{p.title}</Link><span className="muted"> · 每日目标 {p.dailyMinutes} 分钟 / {p.dailyQuestions} 题</span></li>)}</ul>}</section>;
+  const due = reviewQueue(attempts, date);
+  return <section className="work-section"><div className="section-heading"><h2>练习与计划</h2><Link className="text-sm" to="/practice">记录练习</Link></div><div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 text-sm"><span>练习 {stats.uniqueQuestions} 道题</span><span>正确 {stats.correct} / {stats.answered} 次作答</span><Link to={`/practice?tab=review&scope=all&due=${date}`}>待复习 {due.length} 题</Link></div>{plans.length > 0 && <ul className="mt-4 text-sm space-y-2">{plans.map((p) => <li key={p.id}><Link to="/plans">{p.title}</Link><span className="muted"> · 每日目标 {p.dailyMinutes} 分钟 / {p.dailyQuestions} 题</span></li>)}</ul>}</section>;
 }
 
 function TodayTodos({ targetDate }: { targetDate?: string }) {

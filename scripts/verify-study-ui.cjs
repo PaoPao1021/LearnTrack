@@ -52,6 +52,8 @@ const assert = require('node:assert/strict');
   await page.getByText('遗漏积分常数，下次核对', { exact: true }).waitFor();
   await page.getByRole('button', { name: '待复习 1', exact: true }).click();
   await page.getByRole('button', { name: '再练一次', exact: true }).click();
+  // A retry occurs later than its original attempt; fixed clocks must model that order.
+  await page.clock.setFixedTime(new Date('2026-09-30T10:01:00+08:00'));
   await page.getByLabel('用时（秒）').fill('120');
   await page.getByRole('button', { name: '保存练习', exact: true }).click();
   await page.getByText('50%', { exact: true }).first().waitFor();

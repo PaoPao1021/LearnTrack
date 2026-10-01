@@ -3,13 +3,14 @@ import { db } from '../db/database';
 import { enqueueOp, bumpVersion } from '../services/queue';
 import { uuid, nowIso, TZ } from '../utils';
 import type { EntryRecord } from '@learntrack/domain';
-import { effectiveSecondsBetween } from '@learntrack/domain';
+import { effectiveSecondsBetween, stableSeedId } from '@learntrack/domain';
 import { ensureDeviceId } from '../db/seed';
 
 export type TimerStatus = 'idle' | 'running' | 'paused';
 
 export interface TimerState {
   status: TimerStatus;
+  sessionId: string | null;
   activityId: string | null;
   label: string;
   startedAt: number | null;
@@ -31,6 +32,7 @@ export interface TimerState {
 function persisted(s: TimerState) {
   return {
     status: s.status,
+    sessionId: s.sessionId,
     activityId: s.activityId,
     label: s.label,
     startedAt: s.startedAt,
@@ -70,6 +72,7 @@ const initial = loadPersisted();
 
 export const useTimer = create<TimerState>((set, get) => ({
   status: (initial.status as TimerStatus) ?? 'idle',
+  sessionId: initial.sessionId ?? null,
   activityId: initial.activityId ?? null,
   label: initial.label ?? '',
   startedAt: initial.startedAt ?? null,
@@ -84,6 +87,7 @@ export const useTimer = create<TimerState>((set, get) => ({
     const s: TimerState = {
       ...get(),
       status: 'running',
+      sessionId: uuid(),
       activityId,
       label,
       startedAt: Date.now(),
@@ -124,19 +128,30 @@ export const useTimer = create<TimerState>((set, get) => ({
     // Set synchronously before the first await so a double click cannot create
     // two entries from the same running timer.
     set({ stopping: true });
+    const sameSession = (other: Partial<TimerState>) => s.sessionId
+      ? other.sessionId === s.sessionId
+      : other.startedAt === s.startedAt && other.activityId === s.activityId;
+    const clearFinishedSession = () => {
+      // Another tab may already have started the next session while this write waited.
+      const stored = loadPersisted();
+      if (stored.status && !sameSession(stored)) { syncFromStorage(stored); return; }
+      if (!sameSession(get())) return;
+      const cleared: TimerState = { ...get(), status: 'idle', sessionId: null, startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null, stopping: false };
+      savePersisted(cleared);
+      set(cleared);
+    };
     const endedAt = s.status === 'paused' && s.pausedAt ? s.pausedAt : Date.now();
     const pauses = [...s.pauses];
     const duration = effectiveSecondsBetween(s.startedAt, endedAt, pauses);
     if (duration <= 0) {
-      const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null, stopping: false };
-      savePersisted(cleared);
-      set(cleared);
+      clearFinishedSession();
       return null;
     }
     try {
       const deviceId = await ensureDeviceId();
       const entry: EntryRecord = {
-        id: uuid(),
+        // Old persisted timers lack a session ID; all tabs derive the same fallback.
+        id: s.sessionId ?? stableSeedId(`timer.${deviceId}.${s.startedAt}.${s.activityId}`),
         deviceId,
         activityId: s.activityId,
         method: 'timer',
@@ -152,14 +167,14 @@ export const useTimer = create<TimerState>((set, get) => ({
         deletedAt: null,
         version: 1,
       };
-      await db.transaction('rw', db.entries, db.pendingOps, async () => {
+      const inserted = await db.transaction('rw', db.entries, db.pendingOps, async () => {
+        if (await db.entries.get(entry.id)) return false;
         await db.entries.add(entry);
         await enqueueOp('entry', entry.id, entry, null, null, deviceId);
+        return true;
       });
-      const cleared: TimerState = { ...s, status: 'idle', startedAt: null, pauses: [], pausedAt: null, activityId: null, label: '', countdownTargetSeconds: null, stopping: false };
-      savePersisted(cleared);
-      set(cleared);
-      return entry;
+      clearFinishedSession();
+      return inserted ? entry : null;
     } catch (error) {
       set({ stopping: false });
       throw error;
@@ -188,6 +203,7 @@ export function syncFromStorage(data?: Partial<TimerState>): void {
   const p = data ?? loadPersisted();
   useTimer.setState({
     status: (p.status as TimerStatus) ?? 'idle',
+    sessionId: p.sessionId ?? null,
     activityId: p.activityId ?? null,
     label: p.label ?? '',
     startedAt: p.startedAt ?? null,

@@ -9,7 +9,7 @@ describe('timer store', () => {
     await db.delete();
     await db.open();
     useTimer.setState({
-      status: 'idle', activityId: null, label: '', startedAt: null,
+      status: 'idle', sessionId: null, activityId: null, label: '', startedAt: null,
       pauses: [], pausedAt: null, countdownTargetSeconds: null, stopping: false,
     });
   });
@@ -38,6 +38,21 @@ describe('timer store', () => {
     useTimer.setState({ status: 'running', lastTickAt: baseline });
     useTimer.getState().tick();
     expect(useTimer.getState().lastTickAt).toBeGreaterThan(baseline);
+  });
+
+  it.each([null, '659cf6a4-8113-4aa2-ae61-a4bf85d0f402'])('deduplicates independent stop guards for session %s', async (sessionId) => {
+    const snapshot = { status: 'running' as const, sessionId, activityId: crypto.randomUUID(), startedAt: Date.now() - 60_000 };
+    useTimer.setState(snapshot);
+    const first = useTimer.getState().stop();
+    // A second tab has its own stopping flag but the same persisted session.
+    useTimer.setState({ ...snapshot, stopping: false });
+    const second = useTimer.getState().stop();
+    expect((await Promise.all([first, second])).filter(Boolean)).toHaveLength(1);
+    expect(await db.entries.count()).toBe(1);
+    expect(await db.pendingOps.count()).toBe(1);
+    syncFromStorage(snapshot);
+    expect(await useTimer.getState().stop()).toBeNull();
+    expect(await db.entries.count()).toBe(1);
   });
 
   it('does not overwrite an active timer or race a pending stop with a switch', async () => {

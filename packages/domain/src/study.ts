@@ -80,6 +80,14 @@ export function practiceStats(rows: PracticeAttempt[]) {
   };
 }
 
+/** A historical cutoff must not be changed by corrections recorded after that day. */
+export function reviewQueue(rows: PracticeAttempt[], through?: string) {
+  const history = through ? rows.filter((row) => row.learningDate <= through) : rows;
+  return practiceStats(history).review
+    .filter((row) => !through || !row.reviewDate || row.reviewDate <= through)
+    .sort((a, b) => (a.reviewDate ?? '').localeCompare(b.reviewDate ?? '') || a.questionKey.localeCompare(b.questionKey));
+}
+
 export function planDates(start: string, end: string): string[] {
   const startMs = Date.parse(`${start}T00:00:00Z`), endMs = Date.parse(`${end}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || !Number.isFinite(startMs) || !Number.isFinite(endMs) || new Date(startMs).toISOString().slice(0, 10) !== start || new Date(endMs).toISOString().slice(0, 10) !== end || endMs < startMs || endMs - startMs >= 366 * 86400000) throw new Error('计划日期范围不合法（最多 366 天）');
